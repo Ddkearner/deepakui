@@ -2,7 +2,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { URL } from 'url';
 
-// Helper to make URLs absolute - matched from server/index.js
+// Helper to make URLs absolute
 const makeAbsolute = (relativeUrl, baseUrl) => {
     try {
         if (!relativeUrl) return relativeUrl;
@@ -21,7 +21,7 @@ const makeAbsolute = (relativeUrl, baseUrl) => {
     }
 };
 
-// Helper to rewrite URLs inside CSS content - matched from server/index.js
+// Helper to rewrite URLs inside CSS content
 const rewriteCssUrls = (cssContent, baseUrl) => {
     if (!cssContent) return '';
     return cssContent.replace(/url\((['"]?)(.*?)\1\)/gi, (match, quote, url) => {
@@ -58,7 +58,9 @@ export const handler = async (event, context) => {
         console.log(`Scraping: ${url}`);
 
         // 1. Fetch the main HTML
+        // Timeout set to 6s to leave time for processing within Netlify's 10s limit
         const response = await axios.get(url, {
+            timeout: 6000,
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -76,15 +78,22 @@ export const handler = async (event, context) => {
             const href = $(el).attr('href');
             if (href) {
                 const fullUrl = makeAbsolute(href, baseUrl);
-                const promise = axios.get(fullUrl, { timeout: 8000 }).then(resp => {
+
+                // Fetch CSS with 3s timeout to avoid hanging
+                const promise = axios.get(fullUrl, { timeout: 3000 }).then(resp => {
                     const rewritedCss = rewriteCssUrls(resp.data, fullUrl);
                     const styleTag = `<style>/* ${fullUrl} */\n${rewritedCss}</style>`;
                     $(el).replaceWith(styleTag);
                 }).catch(err => {
-                    console.error(`Failed to load css: ${fullUrl}`);
-                    $(el).attr('href', fullUrl); // Fallback to absolute
+                    // Start graceful degradation: if CSS fails, keep the link tag
+                    // This prevents 502 errors if one asset is slow
+                    $(el).attr('href', fullUrl);
                 });
-                stylePromises.push(promise);
+
+                // Limit concurrency to 20 to prevent resource exhaustion
+                if (stylePromises.length < 20) {
+                    stylePromises.push(promise);
+                }
             }
         });
 
