@@ -358,10 +358,14 @@ Return ONLY the enhanced prompt text, nothing else. No explanations, no markdown
             // Step 1 Complete
             setProgressSteps(prev => prev.map(s => s.id === '1' ? { ...s, status: 'complete' } : s.id === '2' ? { ...s, status: 'active' } : s));
 
-            // Use local server in development, Netlify functions in production
-            const endpoint = import.meta.env.DEV
-                ? 'http://localhost:3001/api/scrape'
-                : '/.netlify/functions/scrape';
+            // Use local server in development, specific endpoints for production
+            let endpoint = '/api/scrape'; // Default (Vercel)
+
+            if (import.meta.env.DEV) {
+                endpoint = 'http://localhost:3001/api/scrape';
+            } else if (window.location.hostname.includes('netlify.app')) {
+                endpoint = '/.netlify/functions/scrape';
+            }
 
             const response = await fetch(endpoint, {
                 method: 'POST',
@@ -1110,8 +1114,11 @@ Return ONLY RAW HTML. No markdown fences.
         const el = doc.querySelector(contextMenu.selector);
 
         if (el) {
-            if (el.tagName.toLowerCase() === 'a') {
-                el.setAttribute('href', url);
+            // Check if element itself is an anchor or has a parent anchor
+            const anchor = el.tagName.toLowerCase() === 'a' ? el : el.closest('a');
+
+            if (anchor) {
+                anchor.setAttribute('href', url);
             } else {
                 // Wrap in <a>
                 const link = doc.createElement('a');
@@ -1408,13 +1415,14 @@ Return ONLY RAW HTML. No markdown fences.
             touchTimer = setTimeout(() => {
                 const selector = getUniqueSelector(e.target);
                 if (selector) {
+                    const anchor = e.target.closest('a');
                     window.parent.postMessage({
                         type: 'contextMenu',
                         selector: selector,
                         x: touch.clientX,
                         y: touch.clientY,
                         tagName: e.target.tagName,
-                        currentHref: e.target.href || null
+                        currentHref: anchor ? anchor.href : null
                     }, '*');
                 }
                 touchTimer = null;
@@ -1452,14 +1460,14 @@ Return ONLY RAW HTML. No markdown fences.
              const selector = getUniqueSelector(e.target);
              if (selector) {
                 // Get absolute coordinates relative to the iframe page
-                const rect = e.target.getBoundingClientRect();
+                const anchor = e.target.closest('a');
                 window.parent.postMessage({
                     type: 'contextMenu',
                     selector: selector,
                     x: e.clientX,
                     y: e.clientY,
                     tagName: e.target.tagName,
-                    currentHref: e.target.href || null
+                    currentHref: anchor ? anchor.href : null
                 }, '*');
              }
         }, true);
