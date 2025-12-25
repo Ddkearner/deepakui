@@ -259,10 +259,12 @@ body {
     flex: 1;
     display: flex;
     overflow: hidden;
+    height: 100%;
 }
 
 .studio-sidebar {
     width: 360px;
+    height: 100%;
     border-right: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
@@ -2011,23 +2013,27 @@ body.light-mode input.simmering {
     width: 36px;
     height: 36px;
     border-radius: 10px;
-    background: rgba(15, 15, 15, 0.6);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    color: var(--text-primary);
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15),
+        0 0 0 1px rgba(255, 255, 255, 0.1) inset;
 }
 
 .preview-action-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.25);
+    color: var(--accent-color);
     transform: translateY(-2px);
-    border-color: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.4);
+    box-shadow: 0 8px 25px rgba(255, 191, 0, 0.15),
+        0 0 0 1px rgba(255, 255, 255, 0.2) inset;
 }
 
 .preview-action-btn:active {
@@ -2064,77 +2070,12 @@ body.light-mode input.simmering {
 @media (max-width: 768px) {
     .studio-header {
         padding: 0 12px;
-        height: 50px;
+        height: 56px;
     }
 
-    /* Hide "Project Panel" text */
-    .studio-title {
-        display: none;
-    }
-
-    /* Hide Exit Studio button */
-    .studio-close {
-        display: none;
-    }
-
-    /* Keep device switcher but make it smaller */
-    .device-switcher {
-        transform: translateX(-50%) scale(0.8);
-        padding: 2px;
-        gap: 2px;
-    }
-
-    .device-switcher button {
-        padding: 4px;
-    }
-
-    .device-switcher button svg {
-        width: 14px;
-        height: 14px;
-    }
-
-    /* SHOW header actions on mobile (they were hidden before) */
+    .device-switcher,
     .header-actions {
-        display: flex !important;
-        gap: 4px;
-        margin-right: 0;
-        margin-left: auto;
-    }
-
-    /* Make header buttons icon-only and compact */
-    .header-btn {
-        padding: 6px;
-        min-width: 32px;
-        height: 32px;
-        border-radius: 6px;
-        gap: 0;
-    }
-
-    .header-btn svg {
-        width: 16px;
-        height: 16px;
-    }
-
-    /* Hide button text, show only icons */
-    .header-btn span,
-    .header-btn .btn-text {
-        display: none;
-    }
-
-    /* Studio branding - make smaller */
-    .studio-branding {
-        gap: 6px;
-        font-size: 0.85rem;
-    }
-
-    .add-page-btn {
-        width: 22px;
-        height: 22px;
-    }
-
-    .add-page-btn svg {
-        width: 12px;
-        height: 12px;
+        display: none !important;
     }
 
     .mobile-toggle {
@@ -2143,7 +2084,7 @@ body.light-mode input.simmering {
         border: none;
         color: var(--text-primary);
         cursor: pointer;
-        padding: 6px;
+        padding: 8px;
         margin-right: 4px;
         align-items: center;
         justify-content: center;
@@ -2159,7 +2100,8 @@ body.light-mode input.simmering {
         top: 0;
         left: 0;
         width: 100%;
-        height: 100%;
+        height: calc(100vh - 60px);
+        max-height: calc(100vh - 60px);
         z-index: 1000;
         background: var(--app-bg);
         transform: translateX(-100%);
@@ -2176,12 +2118,77 @@ body.light-mode input.simmering {
         flex: 1;
     }
 
-    /* Bottom Nav - DISABLED (using header buttons instead) */
+    /* Fixed Bottom Nav for Mobile */
     .studio-mobile-nav {
-        display: none !important;
+        display: flex !important;
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(15, 15, 15, 0.7);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 99px;
+        padding: 8px 12px;
+        gap: 8px;
+        z-index: 2000;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        animation: navSlideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
-    /* Mobile nav is hidden, using header buttons instead */
+    @keyframes navSlideUp {
+        from {
+            transform: translate(-50%, 100%);
+            opacity: 0;
+        }
+
+        to {
+            transform: translate(-50%, 0);
+            opacity: 1;
+        }
+    }
+
+    .nav-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: transparent;
+        border: none;
+        color: var(--text-secondary);
+        padding: 8px 16px;
+        border-radius: 99px;
+        cursor: pointer;
+        gap: 4px;
+        transition: all 0.2s;
+        min-width: 64px;
+    }
+
+    .nav-item span {
+        font-size: 0.65rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .nav-item.active {
+        background: rgba(255, 255, 255, 0.1);
+        color: var(--text-primary);
+    }
+
+    .nav-item:active {
+        transform: scale(0.9);
+    }
+
+    /* Full screen tweaks for mobile */
+    .full-screen-preview .studio-mobile-nav {
+        /* Optional: Hide bottom nav in full screen if requested, but user said "clean and full smooth control" 
+           Usually bottom nav stays for basic controls unless "true" full screen is on. 
+           Let's keep it but maybe more subtle? Actually, if it's "full screen", let's hide it to give MAX space.
+        */
+        opacity: 0;
+        pointer-events: none;
+    }
 
     .preview-tabs {
         padding: 0 8px !important;
@@ -2276,3 +2283,112 @@ body.light-mode input.simmering {
         font-size: 0.75rem;
     }
 }
+
+/* Mobile Studio Header Optimization */
+@media (max-width: 1024px) {
+    .hide-on-mobile {
+        display: none;
+    }
+
+    .studio-header {
+        padding: 8px 12px;
+        gap: 8px;
+    }
+
+    .studio-branding {
+        gap: 6px;
+    }
+
+    .studio-branding span {
+        display: none;
+    }
+
+    .add-page-btn {
+        padding: 10px 12px;
+        min-width: auto;
+        display: flex !important;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .add-page-btn svg {
+        width: 20px;
+        height: 20px;
+        min-width: 20px;
+        min-height: 20px;
+    }
+
+    .device-switcher {
+        gap: 4px;
+    }
+
+    .device-switcher button {
+        padding: 8px 10px;
+        min-width: auto;
+    }
+
+    .header-actions {
+        gap: 6px;
+        display: flex !important;
+    }
+
+    .header-btn {
+        padding: 10px 12px;
+        min-width: auto;
+        gap: 0;
+        display: flex !important;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .header-btn svg {
+        margin: 0;
+        width: 20px;
+        height: 20px;
+        min-width: 20px;
+        min-height: 20px;
+    }
+
+    .studio-close {
+        padding: 8px 12px;
+        min-width: auto;
+    }
+
+    /* Hide mobile bottom navigation */
+    .studio-mobile-nav {
+        display: none !important;
+    }
+
+    .mobile-toggle {
+        display: none !important;
+    }
+}
+
+/* Sidebar Toggle Button */
+.sidebar-toggle-btn {
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    padding: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    border-radius: 6px;
+}
+
+.sidebar-toggle-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.sidebar-toggle-btn svg {
+    width: 20px;
+    height: 20px;
+}
+
+@media (max-width: 1024px) {
+    .sidebar-toggle-btn {
+        padding: 10px 12px;
+    }
+}@media (max-width: 1024px) { .animated-placeholder { display: none !important; } }

@@ -12,13 +12,6 @@ export default defineConfig(({ mode }) => {
         '/api': 'http://localhost:3001'
       }
     },
-    preview: {
-      port: 3000,
-      host: '0.0.0.0',
-      proxy: {
-        '/api': 'http://localhost:3001'
-      }
-    },
     plugins: [react()],
     define: {
       'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),

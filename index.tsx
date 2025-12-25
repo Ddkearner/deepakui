@@ -358,7 +358,7 @@ Return ONLY the enhanced prompt text, nothing else. No explanations, no markdown
             // Step 1 Complete
             setProgressSteps(prev => prev.map(s => s.id === '1' ? { ...s, status: 'complete' } : s.id === '2' ? { ...s, status: 'active' } : s));
 
-            const response = await fetch('/api/scrape', {
+            const response = await fetch('/.netlify/functions/scrape', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url })
@@ -399,7 +399,6 @@ Return ONLY the enhanced prompt text, nothing else. No explanations, no markdown
                         html: `<div style="display:flex;justify-content:center;align-items:center;height:100vh;color:#ff6b6b;flex-direction:column;gap:1rem;">
                                 <h2>Import Failed</h2>
                                 <p>${error.message}</p>
-                                <p>Make sure the backend server is running (npm run dev).</p>
                                </div>`,
                         status: 'error'
                     },
@@ -1148,74 +1147,63 @@ Return ONLY RAW HTML. No markdown fences.
                     const p = new DOMParser();
                     const d = p.parseFromString(prevArt.html, 'text/html');
                     const targetEl = d.querySelector(contextMenu.selector);
+                    if (!targetEl) return prevArt;
 
-                    if (targetEl) {
-                        const tagName = targetEl.tagName.toLowerCase();
+                    const tagName = targetEl.tagName.toLowerCase();
 
-                        if (tagName === 'img') {
-                            // Replace all image-related attributes
-                            targetEl.setAttribute('src', base64);
-                            targetEl.removeAttribute('srcset');
-                            targetEl.removeAttribute('sizes');
-                            targetEl.removeAttribute('data-src');
-                            targetEl.removeAttribute('data-srcset');
-                            targetEl.removeAttribute('data-lazy');
-                            targetEl.removeAttribute('data-original');
+                    // Handle standard <img> tags
+                    if (tagName === 'img') {
+                        targetEl.setAttribute('src', base64);
+                        targetEl.removeAttribute('srcset');
+                        targetEl.removeAttribute('sizes');
+                        targetEl.removeAttribute('data-src');
+                        targetEl.removeAttribute('data-lazy-src');
+                        targetEl.removeAttribute('data-original');
+                        targetEl.removeAttribute('data-lazy');
+                        targetEl.removeAttribute('loading');
+                        targetEl.removeAttribute('decoding');
+                        targetEl.removeAttribute('fetchpriority');
 
-                            // Force display with inline style (override any CSS)
-                            const existingStyle = targetEl.getAttribute('style') || '';
-                            targetEl.setAttribute('style',
-                                existingStyle +
-                                '; background-image: none !important;' +
-                                ' content: none !important;' +
-                                ' display: inline-block !important;'
-                            );
-
-                            // Handle picture element sources
-                            if (targetEl.parentElement?.tagName.toLowerCase() === 'picture') {
-                                const sources = targetEl.parentElement.querySelectorAll('source');
-                                sources.forEach(s => {
-                                    s.removeAttribute('srcset');
-                                    s.removeAttribute('data-srcset');
-                                });
-                            }
-                        } else {
-                            // For non-img elements (div, span, etc with background images)
-                            // Replace CSS background image
-                            const existingStyle = targetEl.getAttribute('style') || '';
-                            const cleanStyle = existingStyle.replace(/background[^;]*/gi, '');
-                            targetEl.setAttribute('style',
-                                cleanStyle +
-                                `; background-image: url('${base64}') !important;` +
-                                ' background-size: cover !important;' +
-                                ' background-position: center !important;' +
-                                ' background-repeat: no-repeat !important;'
-                            );
-
-                            // Also set as img src if it has that attribute
-                            if (targetEl.hasAttribute('src')) {
-                                targetEl.setAttribute('src', base64);
-                            }
+                        if (targetEl.parentElement?.tagName.toLowerCase() === 'picture') {
+                            const sources = targetEl.parentElement.querySelectorAll('source');
+                            sources.forEach(s => s.removeAttribute('srcset'));
                         }
-
-                        const isFullPage = prevArt.html.trim().toLowerCase().startsWith('<!doctype') || prevArt.html.trim().toLowerCase().startsWith('<html');
-                        const newHtml = isFullPage ? d.documentElement.outerHTML : d.body.innerHTML;
-
-                        isInternalUpdate.current = true;
-                        return { ...prevArt, html: newHtml };
                     }
-                    return prevArt;
+                    // Handle SVG <image> elements
+                    else if (tagName === 'image' && targetEl.namespaceURI === 'http://www.w3.org/2000/svg') {
+                        targetEl.setAttribute('href', base64);
+                        targetEl.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', base64);
+                    }
+                    // Handle background images (div, span, section, etc.)
+                    else if (targetEl.style.backgroundImage || targetEl.getAttribute('style')?.includes('background')) {
+                        const currentStyle = targetEl.getAttribute('style') || '';
+                        const newStyle = currentStyle.replace(/background-image\s*:\s*url\([^)]+\)/gi, `background-image: url(${base64})`);
+                        if (!newStyle.includes('background-image')) {
+                            targetEl.setAttribute('style', currentStyle + `; background-image: url(${base64})`);
+                        } else {
+                            targetEl.setAttribute('style', newStyle);
+                        }
+                    }
+                    // Handle object/embed tags
+                    else if (tagName === 'object' || tagName === 'embed') {
+                        targetEl.setAttribute('data', base64);
+                    }
+
+                    const isFullPage = prevArt.html.trim().toLowerCase().startsWith('<!doctype') || prevArt.html.trim().toLowerCase().startsWith('<html');
+                    const newHtml = isFullPage ? d.documentElement.outerHTML : d.body.innerHTML;
+
+                    isInternalUpdate.current = true;
+                    return { ...prevArt, html: newHtml };
                 });
 
                 setContextMenu(prev => ({ ...prev, visible: false }));
 
-                // Send message to iframe for immediate update
+                // Send message to iframe for immediate update without reload
                 if (iframeRef.current && iframeRef.current.contentWindow) {
                     iframeRef.current.contentWindow.postMessage({
                         type: 'updateImage',
                         selector: contextMenu.selector,
-                        base64: base64,
-                        tagName: el.tagName.toLowerCase()
+                        base64: base64
                     }, '*');
                 }
 
@@ -1281,51 +1269,44 @@ Return ONLY RAW HTML. No markdown fences.
             } else if (e.data && e.data.type === 'updateImage') {
                 const el = document.querySelector(e.data.selector);
                 if (el) {
-                    const tagName = e.data.tagName || el.tagName.toLowerCase();
+                    const tagName = el.tagName.toLowerCase();
                     
+                    // Handle standard <img> tags
                     if (tagName === 'img') {
-                        // Replace all image attributes
                         el.src = e.data.base64;
                         el.removeAttribute('srcset');
                         el.removeAttribute('sizes');
                         el.removeAttribute('data-src');
-                        el.removeAttribute('data-srcset');
-                        el.removeAttribute('data-lazy');
+                        el.removeAttribute('data-lazy-src');
                         el.removeAttribute('data-original');
+                        el.removeAttribute('data-lazy');
+                        el.removeAttribute('loading');
+                        el.removeAttribute('decoding');
+                        el.removeAttribute('fetchpriority');
                         
-                        // Force display override
-                        const existingStyle = el.getAttribute('style') || '';
-                        el.setAttribute('style', 
-                            existingStyle + 
-                            '; background-image: none !important;' +
-                            ' content: none !important;' +
-                            ' display: inline-block !important;'
-                        );
-                        
-                        // Handle picture element
                         if (el.parentElement && el.parentElement.tagName.toLowerCase() === 'picture') {
                             const sources = el.parentElement.querySelectorAll('source');
-                            sources.forEach(s => {
-                                s.removeAttribute('srcset');
-                                s.removeAttribute('data-srcset');
-                            });
+                            sources.forEach(s => s.removeAttribute('srcset'));
                         }
-                    } else {
-                        // For background images (div, span, etc)
-                        const existingStyle = el.getAttribute('style') || '';
-                        const cleanStyle = existingStyle.replace(/background[^;]*/gi, '');
-                        el.setAttribute('style', 
-                            cleanStyle + 
-                            '; background-image: url(\'' + e.data.base64 + '\') !important;' +
-                            ' background-size: cover !important;' +
-                            ' background-position: center !important;' +
-                            ' background-repeat: no-repeat !important;'
-                        );
-                        
-                        // Also update src if present
-                        if (el.hasAttribute('src')) {
-                            el.setAttribute('src', e.data.base64);
+                    }
+                    // Handle SVG <image> elements
+                    else if (tagName === 'image' && el.namespaceURI === 'http://www.w3.org/2000/svg') {
+                        el.setAttribute('href', e.data.base64);
+                        el.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', e.data.base64);
+                    }
+                    // Handle background images
+                    else if (el.style.backgroundImage || el.getAttribute('style')?.includes('background')) {
+                        const currentStyle = el.getAttribute('style') || '';
+                        const newStyle = currentStyle.replace(/background-image\\s*:\\s*url\\([^)]+\\)/gi, 'background-image: url(' + e.data.base64 + ')');
+                        if (!newStyle.includes('background-image')) {
+                            el.setAttribute('style', currentStyle + '; background-image: url(' + e.data.base64 + ')');
+                        } else {
+                            el.setAttribute('style', newStyle);
                         }
+                    }
+                    // Handle object/embed tags
+                    else if (tagName === 'object' || tagName === 'embed') {
+                        el.setAttribute('data', e.data.base64);
                     }
                 }
             }
@@ -1512,7 +1493,10 @@ Return ONLY RAW HTML. No markdown fences.
                         <button className="mobile-toggle" onClick={() => setIsMobileChatOpen(!isMobileChatOpen)}>
                             <MenuIcon />
                         </button>
-                        <TerminalIcon /> <span className="studio-title">Project Panel</span>
+                        <button className="sidebar-toggle-btn" onClick={() => setIsMobileChatOpen(!isMobileChatOpen)} title="Toggle Chat Panel">
+                            <MenuIcon />
+                        </button>
+                        <span className="hide-on-mobile">Project Panel</span>
                         <button className="add-page-btn" onClick={handleAddPage} title="Add New Page">
                             <PlusIcon />
                         </button>
@@ -1535,17 +1519,17 @@ Return ONLY RAW HTML. No markdown fences.
 
                     <div className="header-actions">
                         <button className={`header-btn ${isMagicEditActive ? 'active' : ''}`} onClick={() => setIsMagicEditActive(!isMagicEditActive)} title="Toggle Magic Edit">
-                            <SparklesIcon /> <span>{isMagicEditActive ? 'Magic Edit On' : 'Magic Edit'}</span>
+                            <SparklesIcon /> <span className="hide-on-mobile">{isMagicEditActive ? 'Magic Edit On' : 'Magic Edit'}</span>
                         </button>
                         <button className={`header-btn ${isCodeView ? 'active' : ''}`} onClick={() => setIsCodeView(!isCodeView)} title="Toggle Code View">
-                            <CodeIcon /> <span>{isCodeView ? 'View Design' : 'View Code'}</span>
+                            <CodeIcon /> <span className="hide-on-mobile">{isCodeView ? 'View Design' : 'View Code'}</span>
                         </button>
                         <button className="header-btn" onClick={handleDownloadCode} title="Download HTML">
-                            <DownloadIcon /> <span>Download</span>
+                            <DownloadIcon />
                         </button>
                     </div>
 
-                    <button className="studio-close" onClick={() => setStudioArtifact(null)}>Exit Studio</button>
+                    <button className="studio-close" onClick={() => setStudioArtifact(null)}><span className="hide-on-mobile">Exit Studio</span></button>
                 </div>
 
                 <div className="studio-layout">
