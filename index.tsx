@@ -53,8 +53,56 @@ import {
     RefreshIcon,
     MaximizeIcon,
     MinimizeIcon,
-    MenuIcon
+    MenuIcon,
+    TrashIcon
 } from './components/Icons';
+
+// Recursive Menu Item Component
+const RecursiveMenuItem = ({
+    layer,
+    onSelect,
+    onHover
+}: {
+    layer: LayerInfo,
+    onSelect: (s: string) => void,
+    onHover: (s: string | null) => void
+}) => {
+    return (
+        <div
+            className={`context-menu-item ${layer.children && layer.children.length > 0 ? 'relative-parent' : ''}`}
+            onClick={(e) => {
+                e.stopPropagation();
+                onSelect(layer.selector);
+            }}
+            onMouseEnter={() => onHover(layer.selector)}
+        >
+            <span className="layer-tag">{layer.tagName.toLowerCase()}</span>
+            <span className="layer-label">{layer.label}</span>
+
+            {layer.children && layer.children.length > 0 && (
+                <div className="submenu recursive-child">
+                    {layer.children.map((child, i) => (
+                        <RecursiveMenuItem
+                            key={i}
+                            layer={child}
+                            onSelect={onSelect}
+                            onHover={onHover}
+                        />
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+interface LayerInfo {
+    tagName: string;
+    className: string;
+    id: string;
+    selector: string;
+    label: string;
+    children?: LayerInfo[];
+}
 
 function App() {
     const [sessions, setSessions] = useState<Session[]>([]);
@@ -139,6 +187,9 @@ function App() {
         selector: string;
         currentHref: string | null;
         tagName?: string;
+        layers?: LayerInfo[];       // For flat list (fallback) or now used for "Parent Stack"
+        parents?: LayerInfo[];      // Ancestors
+        children?: LayerInfo[];     // Children (recursive tree)
     }>({ visible: false, x: 0, y: 0, selector: '', currentHref: null, tagName: undefined });
 
     const [studioInputValue, setStudioInputValue] = useState('');
@@ -1053,7 +1104,9 @@ Return ONLY RAW HTML. No markdown fences.
                         y: iframeRect.top + event.data.y,
                         selector: event.data.selector,
                         currentHref: event.data.currentHref,
-                        tagName: event.data.tagName
+                        tagName: event.data.tagName,
+                        layers: event.data.parents || event.data.layers, // Fallback
+                        children: event.data.children
                     });
                 }
             } else if (event.data && event.data.type === 'closeContextMenu') {
@@ -1138,6 +1191,35 @@ Return ONLY RAW HTML. No markdown fences.
             }
         }
         setContextMenu(prev => ({ ...prev, visible: false }));
+    };
+
+    const handleDeleteElement = () => {
+        if (iframeRef.current && iframeRef.current.contentWindow && contextMenu.selector) {
+            iframeRef.current.contentWindow.postMessage({
+                type: 'deleteElement',
+                selector: contextMenu.selector
+            }, '*');
+            setContextMenu(prev => ({ ...prev, visible: false }));
+        }
+    };
+
+    const handleSelectLayer = (selector: string) => {
+        if (iframeRef.current && iframeRef.current.contentWindow) {
+            iframeRef.current.contentWindow.postMessage({
+                type: 'selectLayer',
+                selector: selector
+            }, '*');
+            setContextMenu(prev => ({ ...prev, visible: false }));
+        }
+    };
+
+    const handleHighlightLayer = (selector: string | null) => {
+        if (iframeRef.current && iframeRef.current.contentWindow) {
+            iframeRef.current.contentWindow.postMessage({
+                type: 'highlightLayer',
+                selector: selector
+            }, '*');
+        }
     };
 
     const handleImageReplaceFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1321,10 +1403,65 @@ Return ONLY RAW HTML. No markdown fences.
                         el.setAttribute('data', e.data.base64);
                     }
                 }
+            } else if (e.data && e.data.type === 'deleteElement') {
+                const el = document.querySelector(e.data.selector);
+                if (el) {
+                    el.remove();
+                    // Clean up selection
+                    if (selectedElement === el) {
+                        selectedElement = null;
+                        highlightedElement = null;
+                    }
+                    
+                    // Notify parent to save state
+                    const newHtml = document.documentElement.outerHTML;
+                    window.parent.postMessage({
+                       type: 'contentUpdated',
+                       html: newHtml
+                    }, '*');
+                }
+            } else if (e.data && e.data.type === 'selectLayer') {
+                const el = document.querySelector(e.data.selector);
+                if (el) {
+                    // Update selection UI to the specific layer
+                    if (selectedElement) {
+                        selectedElement.style.outline = '';
+                        selectedElement.contentEditable = 'false';
+                    }
+                    selectedElement = el;
+                    selectedElement.style.outline = '2px solid #3b82f6';
+                    selectedElement.contentEditable = 'true';
+                    selectedElement.focus();
+                    
+                    // Notify parent of new selection
+                    window.parent.postMessage({
+                        type: 'elementSelected',
+                        selector: e.data.selector,
+                        text: el.innerText,
+                        tagName: el.tagName
+                    }, '*');
+                }
+            } else if (e.data && e.data.type === 'highlightLayer') {
+                if (highlightedLayer && highlightedLayer !== selectedElement) {
+                     highlightedLayer.style.outline = '';
+                     highlightedLayer.style.boxShadow = '';
+                }
+                
+                if (e.data.selector) {
+                    const el = document.querySelector(e.data.selector);
+                    if (el && el !== selectedElement) {
+                        el.style.outline = '2px dashed #f59e0b';
+                        el.style.boxShadow = '0 0 0 4px rgba(245, 158, 11, 0.2)';
+                        highlightedLayer = el;
+                    }
+                } else {
+                    highlightedLayer = null;
+                }
             }
         });
 
         let highlightedElement = null;
+        let highlightedLayer = null;
         let selectedElement = null;
 
         function getUniqueSelector(el) {
@@ -1345,6 +1482,91 @@ Return ONLY RAW HTML. No markdown fences.
                 return getUniqueSelector(parent) + ' > ' + selector;
             }
             return selector;
+        }
+
+        function getTagLabel(el) {
+            const tagName = el.tagName;
+            const map = {
+                'nav': 'Navigation',
+                'header': 'Header',
+                'footer': 'Footer',
+                'main': 'Main Content',
+                'section': 'Section',
+                'article': 'Article',
+                'aside': 'Sidebar',
+                'form': 'Form',
+                'input': 'Input',
+                'button': 'Button',
+                'label': 'Label',
+                'select': 'Dropdown',
+                'textarea': 'Text Area',
+                'video': 'Video',
+                'audio': 'Audio',
+                'canvas': 'Canvas',
+                'svg': 'Vector',
+                'path': 'Shape',
+                'rect': 'Rectangle',
+                'circle': 'Circle',
+                'ul': 'List',
+                'ol': 'Ordered List',
+                'li': 'List Item',
+                'table': 'Table',
+                'tr': 'Row',
+                'td': 'Cell',
+                'th': 'Header Cell',
+                'blockquote': 'Quote',
+                'code': 'Code',
+                'pre': 'Code Block',
+                'hr': 'Divider',
+                'img': 'Image',
+                'p': 'Paragraph',
+                'a': 'Link',
+                'div': 'Container',
+                'span': 'Text Span',
+                'figure': 'Figure',
+                'picture': 'Responsive Image'
+            };
+            
+            // Advanced Detection
+            if (tagName === 'DIV' || tagName === 'SECTION' || tagName === 'SPAN') {
+                if (el.style.backgroundImage || (el.computedStyleMap && el.computedStyleMap().get('background-image')?.toString() !== 'none')) {
+                    return 'Background Image';
+                }
+            }
+            if (tagName === 'IMAGE' && el.namespaceURI === 'http://www.w3.org/2000/svg') return 'Vector Image';
+            
+            const lower = tagName.toLowerCase();
+            if (map[lower]) return map[lower];
+            
+            if (['h1','h2','h3','h4','h5','h6'].includes(lower)) return 'Heading ' + lower.substring(1);
+            
+            return tagName.charAt(0).toUpperCase() + tagName.slice(1).toLowerCase();
+        }
+
+        function buildLayerTree(el, depth = 0) {
+            if (depth > 2) return null; // Limit recursion depth
+            if (!el.children || el.children.length === 0) return null;
+
+            const children = [];
+            Array.from(el.children).forEach(child => {
+                 if (child.nodeType === 1 && 
+                    child.tagName !== 'SCRIPT' && 
+                    child.tagName !== 'STYLE') {
+                    
+                    let label = getTagLabel(child);
+                    if (child.id) label += ' #' + child.id;
+
+                    children.push({
+                        tagName: child.tagName,
+                        className: child.className,
+                        id: child.id,
+                        selector: getUniqueSelector(child),
+                        label: label,
+                        children: buildLayerTree(child, depth + 1)
+                    });
+                }
+            });
+            return children.length > 0 ? children : null;
         }
 
         document.addEventListener('mouseover', (e) => {
@@ -1459,15 +1681,48 @@ Return ONLY RAW HTML. No markdown fences.
 
              const selector = getUniqueSelector(e.target);
              if (selector) {
-                // Get absolute coordinates relative to the iframe page
                 const anchor = e.target.closest('a');
+                
+                // Capture all layers at the cursor position
+                // Capture parent stack (ancestors)
+                const elements = document.elementsFromPoint(e.clientX, e.clientY);
+                const parentStack = [];
+                
+                // Only include elements that act as containers/parents or the target itself
+                // We want to filter out siblings that might be overlapping but irrelevant
+                elements.forEach((el) => {
+                    if (el && 
+                        el.nodeType === 1 && 
+                        el.tagName !== 'HTML' && 
+                        el.tagName !== 'BODY' && 
+                        el.tagName !== 'SCRIPT' && 
+                        el.tagName !== 'STYLE') {
+                        
+                        let label = getTagLabel(el);
+                        if (el.id) label += ' #' + el.id;
+                        
+                        parentStack.push({
+                            tagName: el.tagName,
+                            className: el.className,
+                            id: el.id,
+                            selector: getUniqueSelector(el),
+                            label: label
+                        });
+                    }
+                });
+
+                // Build child tree for the target element
+                const childTree = buildLayerTree(e.target);
+
                 window.parent.postMessage({
                     type: 'contextMenu',
                     selector: selector,
                     x: e.clientX,
                     y: e.clientY,
                     tagName: e.target.tagName,
-                    currentHref: anchor ? anchor.href : null
+                    currentHref: anchor ? anchor.href : null,
+                    parents: parentStack,
+                    children: childTree
                 }, '*');
              }
         }, true);
@@ -1717,7 +1972,10 @@ Return ONLY RAW HTML. No markdown fences.
                 {contextMenu.visible && (
                     <div
                         className="context-menu"
-                        style={{ top: contextMenu.y, left: contextMenu.x }}
+                        style={{
+                            top: Math.min(contextMenu.y, window.innerHeight - 300), // Prevent bottom overflow
+                            left: Math.min(contextMenu.x, window.innerWidth - 220)  // Prevent right overflow
+                        }}
                         onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside
                     >
                         <div className="context-menu-item" onClick={() => {
@@ -1732,6 +1990,50 @@ Return ONLY RAW HTML. No markdown fences.
                                 <ImageIcon /> Replace Image
                             </div>
                         )}
+
+                        <div className="context-menu-divider" />
+
+                        {/* Parent Selection (Ancestors) */}
+                        <div className="context-menu-item relative-parent" onMouseLeave={() => handleHighlightLayer(null)}>
+                            <LayersIcon /> Select Parent
+                            <div className="submenu left-side">
+                                {contextMenu.layers?.map((layer, i) => (
+                                    <div
+                                        key={i}
+                                        className="context-menu-item"
+                                        onClick={() => handleSelectLayer(layer.selector)}
+                                        onMouseEnter={() => handleHighlightLayer(layer.selector)}
+                                    >
+                                        <span className="layer-tag">{layer.tagName.toLowerCase()}</span>
+                                        <span className="layer-label">{layer.label}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Explore Layers (Recursive Children) */}
+                        {contextMenu.children && contextMenu.children.length > 0 && (
+                            <div className="context-menu-item relative-parent" onMouseLeave={() => handleHighlightLayer(null)}>
+                                <div className="menu-icon">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+                                </div>
+                                <span>Explore Layers</span>
+                                <div className="submenu recursive-submenu">
+                                    {contextMenu.children.map((child, i) => (
+                                        <RecursiveMenuItem
+                                            key={i}
+                                            layer={child}
+                                            onSelect={handleSelectLayer}
+                                            onHover={handleHighlightLayer}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="context-menu-item danger" onClick={handleDeleteElement}>
+                            <TrashIcon /> Delete Element
+                        </div>
 
                         <div className="context-menu-divider" />
 
