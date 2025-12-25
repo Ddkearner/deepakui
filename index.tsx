@@ -358,21 +358,18 @@ Return ONLY the enhanced prompt text, nothing else. No explanations, no markdown
             // Step 1 Complete
             setProgressSteps(prev => prev.map(s => s.id === '1' ? { ...s, status: 'complete' } : s.id === '2' ? { ...s, status: 'active' } : s));
 
-            // Use logical endpoint based on environment
-            // In development (npm run dev), use the Express server endpoint
-            // In production (Netlify), use the Serverless Function endpoint
-            const endpoint = import.meta.env.DEV ? '/api/scrape' : '/.netlify/functions/scrape';
-
-            const response = await fetch(endpoint, {
+            const response = await fetch('/.netlify/functions/scrape', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url })
             });
 
             if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.error || `Scraping failed with status: ${response.status}`);
+                throw new Error('Scraping failed');
             }
+
+            // Step 2 & 3 Complete (simulated fast progression for combined backend step)
+            setProgressSteps(prev => prev.map(s => (s.id === '2' || s.id === '3') ? { ...s, status: 'complete' } : s.id === '4' ? { ...s, status: 'active' } : s));
 
             const data = await response.json();
 
