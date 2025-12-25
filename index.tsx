@@ -370,11 +370,9 @@ Return ONLY the enhanced prompt text, nothing else. No explanations, no markdown
             });
 
             if (!response.ok) {
-                throw new Error('Scraping failed');
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || `Scraping failed with status: ${response.status}`);
             }
-
-            // Step 2 & 3 Complete (simulated fast progression for combined backend step)
-            setProgressSteps(prev => prev.map(s => (s.id === '2' || s.id === '3') ? { ...s, status: 'complete' } : s.id === '4' ? { ...s, status: 'active' } : s));
 
             const data = await response.json();
 
