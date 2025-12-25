@@ -358,7 +358,12 @@ Return ONLY the enhanced prompt text, nothing else. No explanations, no markdown
             // Step 1 Complete
             setProgressSteps(prev => prev.map(s => s.id === '1' ? { ...s, status: 'complete' } : s.id === '2' ? { ...s, status: 'active' } : s));
 
-            const response = await fetch('/.netlify/functions/scrape', {
+            // Use logical endpoint based on environment
+            // In development (npm run dev), use the Express server endpoint
+            // In production (Netlify), use the Serverless Function endpoint
+            const endpoint = import.meta.env.DEV ? '/api/scrape' : '/.netlify/functions/scrape';
+
+            const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url })
