@@ -59,6 +59,7 @@ export const handler = async (event, context) => {
 
         // 1. Fetch the main HTML
         const response = await axios.get(url, {
+            timeout: 5000,
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -76,15 +77,19 @@ export const handler = async (event, context) => {
             const href = $(el).attr('href');
             if (href) {
                 const fullUrl = makeAbsolute(href, baseUrl);
-                const promise = axios.get(fullUrl, { timeout: 8000 }).then(resp => {
+                // Reduce timeout to 3s and add minimal error handling
+                const promise = axios.get(fullUrl, { timeout: 3000 }).then(resp => {
                     const rewritedCss = rewriteCssUrls(resp.data, fullUrl);
                     const styleTag = `<style>/* ${fullUrl} */\n${rewritedCss}</style>`;
                     $(el).replaceWith(styleTag);
                 }).catch(err => {
-                    console.error(`Failed to load css: ${fullUrl}`);
-                    $(el).attr('href', fullUrl); // Fallback to absolute
+                    // Fail silently for CSS to keep main process alive
+                    $(el).attr('href', fullUrl);
                 });
-                stylePromises.push(promise);
+
+                if (stylePromises.length < 15) { // Limit to 15 parallel CSS fetches
+                    stylePromises.push(promise);
+                }
             }
         });
 
