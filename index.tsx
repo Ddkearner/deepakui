@@ -143,66 +143,97 @@ function App() {
         if (!activeProjectId || studioPages.length === 0) return;
 
         const saveProject = () => {
-            // Determine Project Name
-            let projectName = 'Untitled Project';
-            const firstPage = studioPages[0];
-            if (firstPage) {
-                // Prioritize explicit names (like from import)
-                if (firstPage.name && firstPage.name !== 'index.html') {
-                    projectName = firstPage.name;
-                }
-                // Then fallback to style names or defaults
-                else if (firstPage.artifact?.styleName && firstPage.artifact.styleName !== 'Blank Canvas') {
-                    projectName = firstPage.artifact.styleName;
-                }
-                else if (firstPage.name === 'index.html' && sessions.length > 0 && sessions[currentSessionIndex]?.prompt) {
-                    projectName = sessions[currentSessionIndex].prompt.substring(0, 30) + '...';
-                }
-                else if (firstPage.artifact?.styleName === 'Blank Canvas') {
-                    projectName = 'Blank Canvas';
-                }
-                else if (firstPage.artifact?.styleName === 'Imported Site') {
-                    // Try to get domain or title from HTML if possible, simple regex or dom parse
-                    const match = firstPage.artifact.html.match(/<title>(.*?)<\/title>/i);
-                    if (match && match[1]) projectName = match[1];
-                    else projectName = 'Imported Project';
-                }
-            }
+            try {
+                // Determine Project Name
+                let projectName = 'Untitled Project';
+                const firstPage = studioPages[0];
+                if (firstPage) {
+                    // Prioritize explicit names (like from manual entry)
+                    if (firstPage.name && firstPage.name !== 'index.html') {
+                        projectName = firstPage.name;
+                    }
+                    // Then fallback to style names or defaults
+                    else if (firstPage.artifact?.styleName && firstPage.artifact.styleName !== 'Blank Canvas') {
+                        projectName = firstPage.artifact.styleName;
+                    }
+                    else if (firstPage.name === 'index.html' && sessions.length > 0 && sessions[currentSessionIndex]?.prompt) {
+                        projectName = sessions[currentSessionIndex].prompt.substring(0, 30) + '...';
+                    }
 
-            const projectData: SavedProject = {
-                id: activeProjectId,
-                name: projectName,
-                pages: studioPages,
-                lastModified: Date.now(),
-                previewHtml: studioPages[0]?.artifact?.html || ''
-            };
+                    // Smart Naming for Imports: Only search title if we have real content
+                    if (firstPage.artifact?.styleName === 'Imported Site' && firstPage.artifact.status === 'complete') {
+                        const match = firstPage.artifact.html.match(/<title>(.*?)<\/title>/i);
+                        if (match && match[1]) projectName = match[1];
+                        else projectName = 'Imported Project';
+                    }
+                }
 
-            // Save individual project data
-            localStorage.setItem(`deepak_ui_project_${activeProjectId}`, JSON.stringify(projectData));
-
-            // Update recent projects index
-            setRecentProjects(prev => {
-                const existingIndex = prev.findIndex(p => p.id === activeProjectId);
-                let newList = [...prev];
-
-                const indexEntry: SavedProject = {
-                    id: projectData.id,
-                    name: projectData.name,
-                    pages: [], // clear pages for index
-                    lastModified: projectData.lastModified,
-                    previewHtml: projectData.previewHtml // Save preview for the list
+                const projectData: SavedProject = {
+                    id: activeProjectId,
+                    name: projectName,
+                    pages: studioPages,
+                    lastModified: Date.now(),
+                    previewHtml: studioPages[0]?.artifact?.html || ''
                 };
 
-                if (existingIndex >= 0) {
-                    newList[existingIndex] = indexEntry;
-                } else {
-                    newList.unshift(indexEntry);
+                // CRITICAL: Avoid saving the "Initializing" placeholder as the permanent preview
+                const isPlaceholder = projectData.previewHtml.includes('Initializing Scraper...');
+
+                // Try to save individual project data
+                try {
+                    localStorage.setItem(`deepak_ui_project_${activeProjectId}`, JSON.stringify(projectData));
+                } catch (e) {
+                    console.error("💾 Project too large for LocalStorage. Metadata will still update.", e);
                 }
-                // Limit to 10
-                newList = newList.slice(0, 10);
-                localStorage.setItem('deepak_ui_recent_projects', JSON.stringify(newList));
-                return newList;
-            });
+
+                // Update recent projects index (Metadata only - very small)
+                setRecentProjects(prev => {
+                    const existingIndex = prev.findIndex(p => p.id === activeProjectId);
+                    let newList = [...prev];
+
+                    // Don't update preview if it's a placeholder AND we already have a previous preview
+                    const existing = prev[existingIndex];
+                    const finalPreview = (isPlaceholder && existing?.previewHtml) ? existing.previewHtml : projectData.previewHtml;
+
+                    const indexEntry: SavedProject = {
+                        id: projectData.id,
+                        name: projectData.name,
+                        pages: [], // clear pages for index
+                        lastModified: projectData.lastModified,
+                        previewHtml: finalPreview
+                    };
+
+                    if (existingIndex >= 0) {
+                        newList[existingIndex] = indexEntry;
+                    } else {
+                        newList.unshift(indexEntry);
+                    }
+                    newList = newList.slice(0, 10);
+
+                    // Side effect: Try to persist the index
+                    try {
+                        localStorage.setItem('deepak_ui_recent_projects', JSON.stringify(newList));
+                    } catch (e) {
+                        console.warn("⚠️ Index storage failed (likely quota). Retrying without one preview...", e);
+                        // Fallback: If it's too big, try saving the index without previews for others
+                        try {
+                            const stripped = newList.map(p => (p.id === activeProjectId ? { ...p, previewHtml: '' } : p));
+                            localStorage.setItem('deepak_ui_recent_projects', JSON.stringify(stripped));
+                        } catch (e2) {
+                            // Absolute fallback: No previews in index
+                            try {
+                                const fullyStripped = newList.map(p => ({ ...p, previewHtml: '' }));
+                                localStorage.setItem('deepak_ui_recent_projects', JSON.stringify(fullyStripped));
+                            } catch (e3) {
+                                console.error("💥 Project index could not be saved at all", e3);
+                            }
+                        }
+                    }
+                    return newList;
+                });
+            } catch (e) {
+                console.error("💥 Auto-save failed:", e);
+            }
         };
 
         const timeoutId = setTimeout(saveProject, 1000); // Debounce save
@@ -210,38 +241,31 @@ function App() {
     }, [studioPages, activeProjectId]);
 
     const handleLoadProject = (projectId: string) => {
-        console.log("🚀 Loading project action triggered:", projectId);
+        console.log("🚀 Loading project:", projectId);
         try {
             const raw = localStorage.getItem(`deepak_ui_project_${projectId}`);
             if (raw) {
                 const data: SavedProject = JSON.parse(raw);
-                console.log("📁 Loaded project Data:", data);
-                if (data.pages && Array.isArray(data.pages) && data.pages.length > 0) {
+                if (data.pages && data.pages.length > 0) {
+                    // ATOMIC UPDATE: No intermediate blank state
+                    // This prevents unmounting and flickering
+                    setStudioPages(data.pages);
+                    setActivePageId(data.pages[0].id);
+                    setActiveProjectId(data.id);
 
-                    // Transition through a clean state
-                    setStudioPages([]);
-                    setActivePageId(null);
-                    setLastSyncedHtml('');
+                    // Explicitly sync HTML immediately to avoid iframe blankness
+                    setLastSyncedHtml(data.pages[0].artifact?.html || '');
 
-                    setTimeout(() => {
-                        console.log("⚡ Applying final project state to Reducers");
-                        setStudioPages(data.pages);
-                        setActivePageId(data.pages[0].id);
-                        setActiveProjectId(data.id);
-                        setIsCodeView(false);
-                        setIsMagicEditActive(false);
-                        setFocusedArtifactIndex(null);
-                    }, 0);
+                    // Reset internal states
+                    setIsCodeView(false);
+                    setIsMagicEditActive(false);
+                    setFocusedArtifactIndex(null);
 
-                    console.log("✅ Load Project Logic Finished Executing");
-                } else {
-                    console.warn("⚠️ Invalid project pages:", projectId);
+                    console.log("✅ Project data loaded successfully");
                 }
-            } else {
-                console.error("❌ Project not found in storage:", projectId);
             }
         } catch (e) {
-            console.error("💥 Critical Load Failure:", e);
+            console.error("💥 Load failed:", e);
         }
     };
 
@@ -256,16 +280,16 @@ function App() {
             const currentActive = prev.find(p => p.id === activePageId);
             if (!currentActive) return prev;
 
-            let newArtifact: Artifact | null = null;
+            let nextArtifact: Artifact | null = null;
             if (typeof action === 'function') {
-                newArtifact = action(currentActive.artifact);
+                nextArtifact = action(currentActive.artifact);
             } else {
-                newArtifact = action;
+                nextArtifact = action;
             }
 
-            if (!newArtifact) return prev; // Handle null case if needed, or remove page?
+            if (!nextArtifact) return prev;
 
-            return prev.map(p => p.id === activePageId ? { ...p, artifact: newArtifact! } : p);
+            return prev.map(p => p.id === activePageId ? { ...p, artifact: nextArtifact! } : p);
         });
     };
 
@@ -499,15 +523,16 @@ Return ONLY the enhanced prompt text, nothing else. No explanations, no markdown
             artifact: {
                 id: initialPageId,
                 html: '<div style="display:flex;justify-content:center;align-items:center;height:100vh;color:#fff;font-family:sans-serif;background:#09090b;">Initializing Scraper...</div>',
-                styleName: 'Imported Site', // This triggers the naming fallback we added
+                styleName: 'Imported Site',
                 status: 'streaming'
             },
             chat: [{ role: 'model', text: `Starting import of ${url}...` }]
         };
 
-        setStudioPages(prev => [...prev, initialPage]);
+        setActiveProjectId(projectId);
+        setStudioPages([initialPage]);
         setActivePageId(initialPageId);
-        setActiveProjectId(projectId); // CRITICAL: Set ID so auto-save works
+        setLastSyncedHtml(initialPage.artifact.html);
 
         // Initialize steps
         setProgressSteps([
@@ -1359,70 +1384,74 @@ Return ONLY RAW HTML. No markdown fences.
 
     const handleImageReplaceFile = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (!file || !studioArtifact || !contextMenu.selector) return;
+        if (!file || !contextMenu.selector) return;
+
+        console.log("🔧 Starting Image Replacement for selector:", contextMenu.selector);
 
         const reader = new FileReader();
         reader.onloadend = () => {
-            const base64 = reader.result as string;
-            isInternalUpdate.current = true;
+            try {
+                const base64 = reader.result as string;
 
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(studioArtifact.html, 'text/html');
-            const el = doc.querySelector(contextMenu.selector);
+                isInternalUpdate.current = true;
 
-            if (el) {
                 setStudioArtifact(prevArt => {
-                    if (!prevArt) return null;
-                    const p = new DOMParser();
-                    const d = p.parseFromString(prevArt.html, 'text/html');
-                    const targetEl = d.querySelector(contextMenu.selector);
-                    if (!targetEl) return prevArt;
+                    if (!prevArt) return prevArt;
 
-                    const tagName = targetEl.tagName.toLowerCase();
+                    try {
+                        const p = new DOMParser();
+                        const d = p.parseFromString(prevArt.html, 'text/html');
+                        const targetEl = d.querySelector(contextMenu.selector);
 
-                    // Handle standard <img> tags
-                    if (tagName === 'img') {
-                        targetEl.setAttribute('src', base64);
-                        targetEl.removeAttribute('srcset');
-                        targetEl.removeAttribute('sizes');
-                        targetEl.removeAttribute('data-src');
-                        targetEl.removeAttribute('data-lazy-src');
-                        targetEl.removeAttribute('data-original');
-                        targetEl.removeAttribute('data-lazy');
-                        targetEl.removeAttribute('loading');
-                        targetEl.removeAttribute('decoding');
-                        targetEl.removeAttribute('fetchpriority');
+                        if (!targetEl) return prevArt;
 
-                        if (targetEl.parentElement?.tagName.toLowerCase() === 'picture') {
-                            const sources = targetEl.parentElement.querySelectorAll('source');
-                            sources.forEach(s => s.removeAttribute('srcset'));
+                        const tagName = targetEl.tagName.toLowerCase();
+
+                        // Handle standard <img> tags
+                        if (tagName === 'img') {
+                            targetEl.setAttribute('src', base64);
+                            targetEl.removeAttribute('srcset');
+                            targetEl.removeAttribute('sizes');
+                            targetEl.removeAttribute('data-src');
+                            targetEl.removeAttribute('data-lazy-src');
+                            targetEl.removeAttribute('data-original');
+                            targetEl.removeAttribute('data-lazy');
+                            targetEl.removeAttribute('loading');
+                            targetEl.removeAttribute('decoding');
+                            targetEl.removeAttribute('fetchpriority');
+
+                            if (targetEl.parentElement?.tagName.toLowerCase() === 'picture') {
+                                const sources = targetEl.parentElement.querySelectorAll('source');
+                                sources.forEach(s => s.removeAttribute('srcset'));
+                            }
                         }
-                    }
-                    // Handle SVG <image> elements
-                    else if (tagName === 'image' && targetEl.namespaceURI === 'http://www.w3.org/2000/svg') {
-                        targetEl.setAttribute('href', base64);
-                        targetEl.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', base64);
-                    }
-                    // Handle background images (div, span, section, etc.)
-                    else if (targetEl.style.backgroundImage || targetEl.getAttribute('style')?.includes('background')) {
-                        const currentStyle = targetEl.getAttribute('style') || '';
-                        const newStyle = currentStyle.replace(/background-image\s*:\s*url\([^)]+\)/gi, `background-image: url(${base64})`);
-                        if (!newStyle.includes('background-image')) {
-                            targetEl.setAttribute('style', currentStyle + `; background-image: url(${base64})`);
-                        } else {
-                            targetEl.setAttribute('style', newStyle);
+                        // Handle SVG <image> elements
+                        else if (tagName === 'image' && targetEl.namespaceURI === 'http://www.w3.org/2000/svg') {
+                            targetEl.setAttribute('href', base64);
+                            targetEl.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', base64);
                         }
-                    }
-                    // Handle object/embed tags
-                    else if (tagName === 'object' || tagName === 'embed') {
-                        targetEl.setAttribute('data', base64);
-                    }
+                        // Handle background images
+                        else if (targetEl.style.backgroundImage || targetEl.getAttribute('style')?.includes('background')) {
+                            const currentStyle = targetEl.getAttribute('style') || '';
+                            const newStyle = currentStyle.replace(/background-image\s*:\s*url\([^)]+\)/gi, `background-image: url(${base64})`);
+                            if (!newStyle.includes('background-image')) {
+                                targetEl.setAttribute('style', currentStyle + `; background-image: url(${base64})`);
+                            } else {
+                                targetEl.setAttribute('style', newStyle);
+                            }
+                        }
+                        // Handle object/embed
+                        else if (tagName === 'object' || tagName === 'embed') {
+                            targetEl.setAttribute('data', base64);
+                        }
 
-                    const isFullPage = prevArt.html.trim().toLowerCase().startsWith('<!doctype') || prevArt.html.trim().toLowerCase().startsWith('<html');
-                    const newHtml = isFullPage ? d.documentElement.outerHTML : d.body.innerHTML;
+                        const isFullPage = prevArt.html.toLowerCase().includes('<html') || prevArt.html.toLowerCase().includes('<!doctype');
+                        const newHtml = isFullPage ? d.documentElement.outerHTML : d.body.innerHTML;
 
-                    isInternalUpdate.current = true;
-                    return { ...prevArt, html: newHtml };
+                        return { ...prevArt, html: newHtml };
+                    } catch (parseErr) {
+                        return prevArt;
+                    }
                 });
 
                 setContextMenu(prev => ({ ...prev, visible: false }));
@@ -1438,6 +1467,8 @@ Return ONLY RAW HTML. No markdown fences.
 
                 // Reset file input
                 e.target.value = '';
+            } catch (err) {
+                console.error("💥 Fatal error in handleImageReplaceFile callback:", err);
             }
         };
         reader.readAsDataURL(file);
@@ -1888,8 +1919,6 @@ Return ONLY RAW HTML. No markdown fences.
     </script>
   `;
 
-    console.log("🖥️ Render Cycle - studioArtifact:", !!studioArtifact, "studioPages:", studioPages.length, "activePageId:", activePageId);
-
     if (studioArtifact) {
         return (
             <div className={`studio-view ${isFullScreen ? 'full-screen-preview' : ''}`}>
@@ -1934,7 +1963,11 @@ Return ONLY RAW HTML. No markdown fences.
                         </button>
                     </div>
 
-                    <button className="studio-close" onClick={() => setStudioArtifact(null)}><span className="hide-on-mobile">Exit Studio</span></button>
+                    <button className="studio-close" onClick={() => {
+                        setActiveProjectId(null);
+                        setStudioPages([]);
+                        setActivePageId(null);
+                    }}><span className="hide-on-mobile">Exit Studio</span></button>
                 </div>
 
                 <div className="studio-layout">
