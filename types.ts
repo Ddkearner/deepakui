@@ -26,3 +26,11 @@ export interface StudioPage {
   artifact: Artifact;
   chat: { role: 'user' | 'model'; text: string }[];
 }
+
+export interface SavedProject {
+  id: string;
+  name: string;
+  pages: StudioPage[];
+  lastModified: number;
+  previewHtml?: string;
+}

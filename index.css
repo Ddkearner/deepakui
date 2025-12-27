@@ -1043,15 +1043,18 @@ body.dark-mode .preview-tab.active {
 .floating-input-container {
     position: absolute;
     bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
     width: 100%;
+    max-width: 800px;
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    align-items: center;
     z-index: 100;
     padding: 0 20px;
     box-sizing: border-box;
     pointer-events: none;
-    flex-direction: column;
-    align-items: center;
+    /* Allow clicking the background through empty gaps */
 }
 
 .input-wrapper {
@@ -2483,4 +2486,200 @@ body.light-mode input.simmering {
 
 .context-menu-item:hover>.submenu.recursive-child {
     display: flex;
+}
+
+/* Recent Projects UI */
+/* Recent Projects UI - Compact & Modern */
+/* Recent Projects UI - Premium Glassmorphism */
+.recent-projects {
+    width: 100%;
+    margin-bottom: 24px;
+    padding: 0 10px;
+    box-sizing: border-box;
+    position: relative;
+    z-index: 500;
+    /* High z-index to stay on top */
+    animation: slideUpFade 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideUpFade {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.recent-track {
+    display: flex;
+    gap: 16px;
+    overflow-x: auto;
+    padding: 12px 4px;
+    /* Hide scrollbar */
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    /* Removed mask-image to avoid potential hit-test issues */
+}
+
+.recent-track::-webkit-scrollbar {
+    display: none;
+}
+
+.recent-project-chip.compact {
+    background: var(--input-bg);
+    border: 1px solid var(--glass-border);
+    padding: 0;
+    border-radius: 16px;
+    color: var(--text-primary);
+    cursor: pointer !important;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    min-width: 200px;
+    max-width: 220px;
+    height: 60px;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    overflow: hidden;
+    position: relative;
+    z-index: 10;
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+}
+
+/* Aggressive hit-test fix: ensure all internal elements let clicks pass to the button */
+.recent-project-chip.compact * {
+    pointer-events: none !important;
+}
+
+.recent-project-chip.compact:hover {
+    transform: translateY(-6px) scale(1.03);
+    border-color: var(--text-primary);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+    background: var(--accent-bg);
+    z-index: 1000;
+    /* Ensure hovered chip is top-most */
+}
+
+.recent-project-chip.compact:active {
+    transform: scale(0.97);
+    opacity: 0.8;
+}
+
+.chip-preview-micro {
+    width: 56px;
+    height: 56px;
+    background: transparent;
+    /* No more black boxes */
+    position: relative;
+    border-right: 1px solid var(--glass-border);
+    overflow: hidden;
+    flex-shrink: 0;
+    pointer-events: none;
+    /* Clicks pass to parent button */
+}
+
+.chip-preview-micro iframe {
+    width: 200%;
+    height: 200%;
+    transform: scale(0.5);
+    transform-origin: top left;
+    border: none;
+    pointer-events: none;
+    background: #fff;
+    opacity: 0.8;
+}
+
+.chip-fallback {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    background: var(--accent-bg);
+}
+
+.chip-fallback svg {
+    width: 20px;
+    height: 20px;
+}
+
+.chip-meta {
+    padding: 0 14px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    overflow: hidden;
+    flex: 1;
+    text-align: left;
+    pointer-events: none;
+    /* Clicks pass to parent button */
+}
+
+.chip-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-primary);
+    line-height: 1.2;
+}
+
+/* Adjust Empty State to make room */
+.empty-content {
+    margin-top: -15vh;
+    /* Slide up significantly */
+    transition: margin-top 0.5s ease;
+}
+
+.marketplace-marquee {
+    margin-top: 24px;
+    margin-bottom: 32px;
+}
+
+.recent-projects {
+    width: 100%;
+    margin-bottom: 24px;
+    padding: 0 10px;
+    box-sizing: border-box;
+    position: relative;
+    z-index: 200;
+    pointer-events: auto;
+    /* CRITICAL FIX: Overrides parent's pointer-events: none */
+    animation: slideUpFade 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.start-blank-wrapper {
+    margin-bottom: 20px;
+    pointer-events: auto;
+    /* CRITICAL FIX: Overrides parent's pointer-events: none */
+}
+
+.start-blank-btn {
+    background: var(--input-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 8px 16px;
+    border-radius: 99px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s;
+    backdrop-filter: blur(8px);
+}
+
+.start-blank-btn:hover {
+    background: var(--accent-bg);
+    color: var(--text-primary);
+    border-color: var(--text-primary);
+    transform: translateY(-2px);
 }

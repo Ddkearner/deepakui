@@ -9,7 +9,7 @@ import { GoogleGenAI } from '@google/genai';
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 
-import { Artifact, Session, ComponentVariation, StudioPage } from './types';
+import { Artifact, Session, ComponentVariation, StudioPage, SavedProject } from './types';
 import { INITIAL_PLACEHOLDERS } from './constants';
 import { generateId } from './utils';
 import JSZip from 'jszip';
@@ -123,8 +123,130 @@ function App() {
 
     const [studioPages, setStudioPages] = useState<StudioPage[]>([]);
     const [activePageId, setActivePageId] = useState<string | null>(null);
+    const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+    const [recentProjects, setRecentProjects] = useState<SavedProject[]>([]);
 
-    const activePage = studioPages.find(p => p.id === activePageId);
+    // Load recent projects on mount
+    useEffect(() => {
+        try {
+            const raw = localStorage.getItem('deepak_ui_recent_projects');
+            if (raw) {
+                setRecentProjects(JSON.parse(raw));
+            }
+        } catch (e) {
+            console.error("Failed to load recent projects", e);
+        }
+    }, []);
+
+    // Auto-Save Effect
+    useEffect(() => {
+        if (!activeProjectId || studioPages.length === 0) return;
+
+        const saveProject = () => {
+            // Determine Project Name
+            let projectName = 'Untitled Project';
+            const firstPage = studioPages[0];
+            if (firstPage) {
+                // Prioritize explicit names (like from import)
+                if (firstPage.name && firstPage.name !== 'index.html') {
+                    projectName = firstPage.name;
+                }
+                // Then fallback to style names or defaults
+                else if (firstPage.artifact?.styleName && firstPage.artifact.styleName !== 'Blank Canvas') {
+                    projectName = firstPage.artifact.styleName;
+                }
+                else if (firstPage.name === 'index.html' && sessions.length > 0 && sessions[currentSessionIndex]?.prompt) {
+                    projectName = sessions[currentSessionIndex].prompt.substring(0, 30) + '...';
+                }
+                else if (firstPage.artifact?.styleName === 'Blank Canvas') {
+                    projectName = 'Blank Canvas';
+                }
+                else if (firstPage.artifact?.styleName === 'Imported Site') {
+                    // Try to get domain or title from HTML if possible, simple regex or dom parse
+                    const match = firstPage.artifact.html.match(/<title>(.*?)<\/title>/i);
+                    if (match && match[1]) projectName = match[1];
+                    else projectName = 'Imported Project';
+                }
+            }
+
+            const projectData: SavedProject = {
+                id: activeProjectId,
+                name: projectName,
+                pages: studioPages,
+                lastModified: Date.now(),
+                previewHtml: studioPages[0]?.artifact?.html || ''
+            };
+
+            // Save individual project data
+            localStorage.setItem(`deepak_ui_project_${activeProjectId}`, JSON.stringify(projectData));
+
+            // Update recent projects index
+            setRecentProjects(prev => {
+                const existingIndex = prev.findIndex(p => p.id === activeProjectId);
+                let newList = [...prev];
+
+                const indexEntry: SavedProject = {
+                    id: projectData.id,
+                    name: projectData.name,
+                    pages: [], // clear pages for index
+                    lastModified: projectData.lastModified,
+                    previewHtml: projectData.previewHtml // Save preview for the list
+                };
+
+                if (existingIndex >= 0) {
+                    newList[existingIndex] = indexEntry;
+                } else {
+                    newList.unshift(indexEntry);
+                }
+                // Limit to 10
+                newList = newList.slice(0, 10);
+                localStorage.setItem('deepak_ui_recent_projects', JSON.stringify(newList));
+                return newList;
+            });
+        };
+
+        const timeoutId = setTimeout(saveProject, 1000); // Debounce save
+        return () => clearTimeout(timeoutId);
+    }, [studioPages, activeProjectId]);
+
+    const handleLoadProject = (projectId: string) => {
+        console.log("🚀 Loading project action triggered:", projectId);
+        try {
+            const raw = localStorage.getItem(`deepak_ui_project_${projectId}`);
+            if (raw) {
+                const data: SavedProject = JSON.parse(raw);
+                console.log("📁 Loaded project Data:", data);
+                if (data.pages && Array.isArray(data.pages) && data.pages.length > 0) {
+
+                    // Transition through a clean state
+                    setStudioPages([]);
+                    setActivePageId(null);
+                    setLastSyncedHtml('');
+
+                    setTimeout(() => {
+                        console.log("⚡ Applying final project state to Reducers");
+                        setStudioPages(data.pages);
+                        setActivePageId(data.pages[0].id);
+                        setActiveProjectId(data.id);
+                        setIsCodeView(false);
+                        setIsMagicEditActive(false);
+                        setFocusedArtifactIndex(null);
+                    }, 0);
+
+                    console.log("✅ Load Project Logic Finished Executing");
+                } else {
+                    console.warn("⚠️ Invalid project pages:", projectId);
+                }
+            } else {
+                console.error("❌ Project not found in storage:", projectId);
+            }
+        } catch (e) {
+            console.error("💥 Critical Load Failure:", e);
+        }
+    };
+
+    // Safe derivation of active page with fallback to ensure Studio always opens if pages exist
+    const activePage = studioPages.find(p => p.id === activePageId) || (studioPages.length > 0 ? studioPages[0] : undefined);
     const studioArtifact = activePage?.artifact || null;
     const studioChat = activePage?.chat || [];
 
@@ -164,20 +286,7 @@ function App() {
         });
     };
 
-    const isInternalUpdate = useRef(false);
-    const [lastSyncedHtml, setLastSyncedHtml] = useState('');
 
-    useEffect(() => {
-        if (studioArtifact) {
-            if (isInternalUpdate.current) {
-                isInternalUpdate.current = false;
-                return;
-            }
-            setLastSyncedHtml(studioArtifact.html);
-        } else {
-            setLastSyncedHtml('');
-        }
-    }, [studioArtifact?.html, studioArtifact?.id]);
 
     // Context Menu State
     const [contextMenu, setContextMenu] = useState<{
@@ -382,13 +491,15 @@ Return ONLY the enhanced prompt text, nothing else. No explanations, no markdown
             console.error("Error parsing URL for name:", e);
         }
 
+        const projectId = generateId(); // Generate Project ID for Import
+
         const initialPage: StudioPage = {
             id: initialPageId,
             name: pageName,
             artifact: {
                 id: initialPageId,
                 html: '<div style="display:flex;justify-content:center;align-items:center;height:100vh;color:#fff;font-family:sans-serif;background:#09090b;">Initializing Scraper...</div>',
-                styleName: 'Imported Site',
+                styleName: 'Imported Site', // This triggers the naming fallback we added
                 status: 'streaming'
             },
             chat: [{ role: 'model', text: `Starting import of ${url}...` }]
@@ -396,6 +507,7 @@ Return ONLY the enhanced prompt text, nothing else. No explanations, no markdown
 
         setStudioPages(prev => [...prev, initialPage]);
         setActivePageId(initialPageId);
+        setActiveProjectId(projectId); // CRITICAL: Set ID so auto-save works
 
         // Initialize steps
         setProgressSteps([
@@ -556,6 +668,8 @@ Return ONLY the enhanced prompt text, nothing else. No explanations, no markdown
         const artifact = sessions[currentSessionIndex].artifacts[focusedArtifactIndex];
 
         const initialPageId = generateId();
+        const projectId = generateId();
+
         const initialPage: StudioPage = {
             id: initialPageId,
             name: 'index.html',
@@ -565,10 +679,12 @@ Return ONLY the enhanced prompt text, nothing else. No explanations, no markdown
 
         setStudioPages([initialPage]);
         setActivePageId(initialPageId);
+        setActiveProjectId(projectId);
     };
-
     const handleStartBlank = () => {
         const initialPageId = generateId();
+        const projectId = generateId();
+
         const initialPage: StudioPage = {
             id: initialPageId,
             name: 'index.html',
@@ -583,8 +699,8 @@ Return ONLY the enhanced prompt text, nothing else. No explanations, no markdown
 
         setStudioPages([initialPage]);
         setActivePageId(initialPageId);
+        setActiveProjectId(projectId);
     };
-
     const handleStudioPaste = (event: React.ClipboardEvent) => {
         const items = event.clipboardData.items;
         for (const item of items) {
@@ -1080,6 +1196,25 @@ Return ONLY RAW HTML. No markdown fences.
     const [activeTab, setActiveTab] = useState<'chat'>('chat');
     const [selectedElement, setSelectedElement] = useState<{ selector: string, text: string, tagName: string } | null>(null);
     const [isCodeView, setIsCodeView] = useState(false);
+
+    const isInternalUpdate = useRef(false);
+    const [lastSyncedHtml, setLastSyncedHtml] = useState('');
+
+    useEffect(() => {
+        if (studioArtifact) {
+            // If we are in code view, we always want to sync because the iframe isn't rendered (no reload risk)
+            // If in preview, we skip sync if it's an internal update to prevent reload
+            if (isInternalUpdate.current && !isCodeView) {
+                isInternalUpdate.current = false;
+                return;
+            }
+            setLastSyncedHtml(studioArtifact.html);
+            // Reset flag just in case
+            isInternalUpdate.current = false;
+        } else {
+            setLastSyncedHtml('');
+        }
+    }, [studioArtifact?.html, studioArtifact?.id, isCodeView]);
     const [viewMode, setViewMode] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
     const [isMagicEditActive, setIsMagicEditActive] = useState(false);
     const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -1753,6 +1888,8 @@ Return ONLY RAW HTML. No markdown fences.
     </script>
   `;
 
+    console.log("🖥️ Render Cycle - studioArtifact:", !!studioArtifact, "studioPages:", studioPages.length, "activePageId:", activePageId);
+
     if (studioArtifact) {
         return (
             <div className={`studio-view ${isFullScreen ? 'full-screen-preview' : ''}`}>
@@ -2212,6 +2349,42 @@ Return ONLY RAW HTML. No markdown fences.
                 </div>
 
                 <div className="floating-input-container">
+                    {/* Recent Projects */}
+                    {recentProjects.length > 0 && (
+                        <div className="recent-projects">
+                            <div className="recent-track">
+                                {recentProjects.map(proj => (
+                                    <button
+                                        key={proj.id}
+                                        type="button"
+                                        className="recent-project-chip compact"
+                                        onClick={() => {
+                                            console.log("Chip UI Clicked:", proj.id);
+                                            handleLoadProject(proj.id);
+                                        }}
+                                        title={`Project: ${proj.name}`}
+                                    >
+                                        <div className="chip-preview-micro">
+                                            {proj.previewHtml ? (
+                                                <iframe
+                                                    srcDoc={proj.previewHtml}
+                                                    title="Preview"
+                                                    sandbox="allow-same-origin"
+                                                    tabIndex={-1}
+                                                />
+                                            ) : (
+                                                <div className="chip-fallback"><LayersIcon /></div>
+                                            )}
+                                        </div>
+                                        <div className="chip-meta">
+                                            <span className="chip-name">{proj.name}</span>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     <div className="start-blank-wrapper">
                         <button type="button" onClick={handleStartBlank} className="start-blank-btn">
                             <PlusIcon /> Start with blank Project
