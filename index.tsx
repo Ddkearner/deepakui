@@ -23,7 +23,234 @@ const MARKETPLACES = [
     { name: 'Template Goat', url: 'https://templategoat.com/' }
 ];
 
+export interface Model {
+    id: string;
+    name: string;
+    provider: 'google' | 'openrouter';
+    modelId: string;
+}
+
+// OpenRouter API Response Types
+interface OpenRouterModel {
+    id: string;
+    name: string;
+    pricing: {
+        prompt: string;
+        completion: string;
+    };
+    context_length: number;
+}
+
+interface OpenRouterModelsResponse {
+    data: OpenRouterModel[];
+}
+
+// Static models (always available)
+const STATIC_MODELS: Model[] = [
+    // Google Gemini (FREE with your API key)
+    { id: 'gemini-flash', name: 'Gemini Flash ⚡ PAID', provider: 'google', modelId: 'gemini-3-flash-preview' }
+];
+
+// Fallback OpenRouter models (prioritize free coding models)
+// These are reliable coding-focused models that shouldn't hit rate limits
+const FALLBACK_OPENROUTER_MODELS: Model[] = [
+    { id: 'mistral-devstral-2', name: 'Mistral: Devstral 2 2512 (Free)', provider: 'openrouter', modelId: 'mistralai/mistral-devstral-2:free' },
+    { id: 'qwen-coder-480b', name: 'Qwen: Qwen3 Coder 480B A35B (Free)', provider: 'openrouter', modelId: 'qwen/qwen-3-coder-480b-a35b:free' },
+    { id: 'kat-coder-pro', name: 'Kwaipilot: KAT-Coder-Pro V1 (Free)', provider: 'openrouter', modelId: 'kwaipilot/kat-coder-pro-v1:free' },
+    { id: 'deepseek-v3-nex', name: 'Nex AGI: DeepSeek V3.1 Nex N1 (Free)', provider: 'openrouter', modelId: 'nex-agi/deepseek-v3.1-nex-n1:free' },
+    { id: 'xiaomi-mimo-flash', name: 'Xiaomi: MiMo-V2-Flash (Free)', provider: 'openrouter', modelId: 'xiaomi/mimo-v2-flash:free' }
+];
+
+
+// Fetch available free CODING models from OpenRouter
+async function fetchOpenRouterModels(): Promise<Model[]> {
+    try {
+        console.log('🔌 Fetching OpenRouter coding models...');
+
+        // Check cache first (24 hour expiry)
+        const cached = localStorage.getItem('openrouter_models_cache_v2');
+        const cacheTimestamp = localStorage.getItem('openrouter_models_timestamp_v2');
+
+        if (cached && cacheTimestamp) {
+            const age = Date.now() - parseInt(cacheTimestamp);
+            const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+
+            if (age < CACHE_DURATION) {
+                console.log('✅ Using cached OpenRouter models');
+                return JSON.parse(cached);
+            }
+        }
+
+        // Fetch from OpenRouter API
+        const response = await fetch('https://openrouter.ai/api/v1/models');
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data: OpenRouterModelsResponse = await response.json();
+
+        // CODING KEYWORDS: Models with these keywords are coding-focused
+        const codingKeywords = [
+            'coder', 'code', 'dev', 'deepseek', 'qwen', 'mistral',
+            'devstral', 'kwaipilot', 'kat-coder', 'mimo', 'llama',
+            'nemotron', 'chimera', 'research', 'deepresearch'
+        ];
+
+        // BLACKLIST: Defected models to exclude
+        const blacklistedModels = [
+            'Olmo 3.1 32B Think', 'DeepSeek V3.1 Nex N1', 'Trinity Mini',
+            'R1T Chimera', 'Olmo 3 32B Think', 'Nemotron Nano 12B 2 VL',
+            'Tongyi DeepResearch 30B A3B', 'Nemotron Nano 9B V2', 'gpt-oss-120b',
+            'gpt-oss-20b', 'GLM 4.5 Air', 'Qwen3 Coder 480B A35B',
+            'Kimi K2 0711', 'Venice: Uncensored', 'Gemma 3n 2B',
+            'DeepSeek R1T2 Chimera', 'R1 0528', 'Gemma 3n 4B', 'Qwen3 4B',
+            'Mistral Small 3.1 24B', 'Gemma 3 4B', 'Gemma 3 12B',
+            'Gemma 3 27B', 'Llama 3.3 70B Instruct', 'Llama 3.2 3B Instruct',
+            'Qwen2.5-VL 7B Instruct', 'Hermes 3 405B Instruct',
+            'Llama 3.1 405B Instruct', 'Mistral 7B Instruct'
+        ];
+
+        // Filter for truly free models (pricing = "0" for both prompt and completion)
+        // AND filter for coding-focused models using keywords
+        // AND exclude blacklisted models
+        const freeModels = data.data.filter(m => {
+            const isFree = m.pricing.prompt === "0" && m.pricing.completion === "0";
+
+            const isCodingModel = codingKeywords.some(keyword =>
+                m.id.toLowerCase().includes(keyword) ||
+                m.name.toLowerCase().includes(keyword)
+            );
+
+            const isBlacklisted = blacklistedModels.some(bad =>
+                m.name.includes(bad) || m.id.includes(bad)
+            );
+
+            return isFree && isCodingModel && !isBlacklisted;
+        });
+
+        console.log(`✅ Found ${freeModels.length} free coding models from OpenRouter (after blacklist)`);
+
+        // Map to internal Model format
+        const models: Model[] = freeModels.map(m => ({
+            id: m.id.replace(/[/:]/g, '-'), // sanitize ID for use as HTML id
+            name: `${m.name} (Free)`,
+            provider: 'openrouter',
+            modelId: m.id
+        }));
+
+        // Cache the results
+        localStorage.setItem('openrouter_models_cache_v2', JSON.stringify(models));
+        localStorage.setItem('openrouter_models_timestamp_v2', Date.now().toString());
+
+        return models;
+
+    } catch (error) {
+        console.error('❌ Failed to fetch OpenRouter models:', error);
+        console.log('⚠️ Using fallback coding models');
+        return FALLBACK_OPENROUTER_MODELS;
+    }
+}
+
+
+async function* streamAI({
+    model,
+    apiKey,
+    systemInstruction,
+    prompt,
+    images = []
+}: {
+    model: Model,
+    apiKey: string,
+    systemInstruction?: string,
+    prompt: string,
+    images?: string[]
+}) {
+    if (model.provider === 'google') {
+        const ai = new GoogleGenAI({ apiKey });
+        const parts: any[] = [];
+        if (systemInstruction) {
+            parts.push({ text: systemInstruction });
+        }
+        parts.push({ text: prompt });
+
+        images.forEach(img => {
+            const base64Data = img.split(',')[1];
+            parts.push({ inlineData: { data: base64Data, mimeType: 'image/png' } });
+        });
+
+        const result = await ai.models.generateContentStream({
+            model: model.modelId,
+            contents: [{ role: 'user', parts }]
+        });
+
+        for await (const chunk of result) {
+            yield chunk.text;
+        }
+    } else {
+        // OpenRouter API
+        const messages: any[] = [];
+        if (systemInstruction) messages.push({ role: 'system', content: systemInstruction });
+
+        const content: any[] = [{ type: 'text', text: prompt }];
+        images.forEach(img => {
+            content.push({ type: 'image_url', image_url: { url: img } });
+        });
+        messages.push({ role: 'user', content });
+
+        console.log('🔌 OpenRouter API Request:', { model: model.modelId, messageCount: messages.length });
+
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+                'HTTP-Referer': 'https://deepak-ui.com',
+                'X-Title': 'Deepak UI'
+            },
+            body: JSON.stringify({
+                model: model.modelId,
+                messages,
+                stream: true
+            })
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('🔴 OpenRouter API Error:', response.status, errorText);
+            throw new Error(`OpenRouter API failed: ${response.status} - ${errorText}`);
+        }
+
+        if (!response.body) throw new Error("No response body");
+
+        console.log('✅ OpenRouter streaming started');
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n');
+            for (const line of lines) {
+                if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+                    try {
+                        const json = JSON.parse(line.substring(6));
+                        const text = json.choices[0]?.delta?.content || '';
+                        if (text) yield text;
+                    } catch (e) {
+                        console.warn('Failed to parse SSE line:', line);
+                    }
+                }
+            }
+        }
+        console.log('✅ OpenRouter streaming complete');
+    }
+}
+
 import DottedGlowBackground from './components/DottedGlowBackground';
+import ModelSelector from './components/ModelSelector';
+import StudioModelSelector from './components/StudioModelSelector';
 import ArtifactCard from './components/ArtifactCard';
 import SideDrawer from './components/SideDrawer';
 import PasteUrlModal from './components/PasteUrlModal';
@@ -54,46 +281,47 @@ import {
     MaximizeIcon,
     MinimizeIcon,
     MenuIcon,
-    TrashIcon
+    TrashIcon,
+    PaletteIcon
 } from './components/Icons';
 
 // Recursive Menu Item Component
-const RecursiveMenuItem = ({
-    layer,
-    onSelect,
-    onHover
-}: {
+const RecursiveMenuItem: React.FC<{
     layer: LayerInfo,
     onSelect: (s: string) => void,
     onHover: (s: string | null) => void
+}> = ({
+    layer,
+    onSelect,
+    onHover
 }) => {
-    return (
-        <div
-            className={`context-menu-item ${layer.children && layer.children.length > 0 ? 'relative-parent' : ''}`}
-            onClick={(e) => {
-                e.stopPropagation();
-                onSelect(layer.selector);
-            }}
-            onMouseEnter={() => onHover(layer.selector)}
-        >
-            <span className="layer-tag">{layer.tagName.toLowerCase()}</span>
-            <span className="layer-label">{layer.label}</span>
+        return (
+            <div
+                className={`context-menu-item ${layer.children && layer.children.length > 0 ? 'relative-parent' : ''}`}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    onSelect(layer.selector);
+                }}
+                onMouseEnter={() => onHover(layer.selector)}
+            >
+                <span className="layer-tag">{layer.tagName.toLowerCase()}</span>
+                <span className="layer-label">{layer.label}</span>
 
-            {layer.children && layer.children.length > 0 && (
-                <div className="submenu recursive-child">
-                    {layer.children.map((child, i) => (
-                        <RecursiveMenuItem
-                            key={i}
-                            layer={child}
-                            onSelect={onSelect}
-                            onHover={onHover}
-                        />
-                    ))}
-                </div>
-            )}
-        </div>
-    );
-};
+                {layer.children && layer.children.length > 0 && (
+                    <div className="submenu recursive-child">
+                        {layer.children.map((child, i) => (
+                            <RecursiveMenuItem
+                                key={i}
+                                layer={child}
+                                onSelect={onSelect}
+                                onHover={onHover}
+                            />
+                        ))}
+                    </div>
+                )}
+            </div>
+        );
+    };
 
 interface LayerInfo {
     tagName: string;
@@ -124,19 +352,58 @@ function App() {
     const [studioPages, setStudioPages] = useState<StudioPage[]>([]);
     const [activePageId, setActivePageId] = useState<string | null>(null);
     const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
-    const [recentProjects, setRecentProjects] = useState<SavedProject[]>([]);
 
-    // Load recent projects on mount
+    // Theme Editor States
+    const [showThemeEditor, setShowThemeEditor] = useState(false);
+    const [isGlobalThemeEdit, setIsGlobalThemeEdit] = useState(false);
+    const [themeColors, setThemeColors] = useState<string[]>([]);
+    const [editingColor, setEditingColor] = useState<string | null>(null);
+
+    // Dynamic OpenRouter Models
+    const [openRouterModels, setOpenRouterModels] = useState<Model[]>([]);
+    const [isLoadingModels, setIsLoadingModels] = useState(true);
+    const [modelsError, setModelsError] = useState<string | null>(null);
+
+    // Combined models list
+    const MODELS = [...STATIC_MODELS, ...openRouterModels];
+
+    const [selectedModel, setSelectedModel] = useState<Model>(STATIC_MODELS[0]); // Default to Gemini Flash
+
+    // Fetch OpenRouter models on mount
     useEffect(() => {
-        try {
-            const raw = localStorage.getItem('deepak_ui_recent_projects');
-            if (raw) {
-                setRecentProjects(JSON.parse(raw));
+        const loadModels = async () => {
+            setIsLoadingModels(true);
+            try {
+                const models = await fetchOpenRouterModels();
+                setOpenRouterModels(models);
+                setModelsError(null);
+
+                // Set Default Model: NVIDIA Nemotron 3 Nano 30B
+                const defaultModel = models.find(m => m.name.includes('Nemotron 3 Nano 30B'));
+                if (defaultModel) {
+                    setSelectedModel(defaultModel);
+                }
+            } catch (error) {
+                console.error('Error loading models:', error);
+                setModelsError('Failed to load models');
+            } finally {
+                setIsLoadingModels(false);
             }
-        } catch (e) {
-            console.error("Failed to load recent projects", e);
-        }
+        };
+        loadModels();
     }, []);
+
+    // Debug: Check API keys on mount
+    useEffect(() => {
+        const geminiKey = import.meta.env.VITE_GEMINI_API_KEY;
+        const openrouterKey = import.meta.env.VITE_OPENROUTER_API_KEY;
+
+        console.log('🔑 API Keys Status:');
+        console.log('  Gemini:', geminiKey ? `✅ Configured (${geminiKey.substring(0, 10)}...)` : '❌ Not configured');
+        console.log('  OpenRouter:', openrouterKey ? `✅ Configured (${openrouterKey.substring(0, 10)}...)` : '❌ Not configured');
+    }, []);
+
+
 
     // Auto-Save Effect
     useEffect(() => {
@@ -183,54 +450,8 @@ function App() {
                 try {
                     localStorage.setItem(`deepak_ui_project_${activeProjectId}`, JSON.stringify(projectData));
                 } catch (e) {
-                    console.error("💾 Project too large for LocalStorage. Metadata will still update.", e);
+                    console.error("💾 Project too large for LocalStorage.", e);
                 }
-
-                // Update recent projects index (Metadata only - very small)
-                setRecentProjects(prev => {
-                    const existingIndex = prev.findIndex(p => p.id === activeProjectId);
-                    let newList = [...prev];
-
-                    // Don't update preview if it's a placeholder AND we already have a previous preview
-                    const existing = prev[existingIndex];
-                    const finalPreview = (isPlaceholder && existing?.previewHtml) ? existing.previewHtml : projectData.previewHtml;
-
-                    const indexEntry: SavedProject = {
-                        id: projectData.id,
-                        name: projectData.name,
-                        pages: [], // clear pages for index
-                        lastModified: projectData.lastModified,
-                        previewHtml: finalPreview
-                    };
-
-                    if (existingIndex >= 0) {
-                        newList[existingIndex] = indexEntry;
-                    } else {
-                        newList.unshift(indexEntry);
-                    }
-                    newList = newList.slice(0, 10);
-
-                    // Side effect: Try to persist the index
-                    try {
-                        localStorage.setItem('deepak_ui_recent_projects', JSON.stringify(newList));
-                    } catch (e) {
-                        console.warn("⚠️ Index storage failed (likely quota). Retrying without one preview...", e);
-                        // Fallback: If it's too big, try saving the index without previews for others
-                        try {
-                            const stripped = newList.map(p => (p.id === activeProjectId ? { ...p, previewHtml: '' } : p));
-                            localStorage.setItem('deepak_ui_recent_projects', JSON.stringify(stripped));
-                        } catch (e2) {
-                            // Absolute fallback: No previews in index
-                            try {
-                                const fullyStripped = newList.map(p => ({ ...p, previewHtml: '' }));
-                                localStorage.setItem('deepak_ui_recent_projects', JSON.stringify(fullyStripped));
-                            } catch (e3) {
-                                console.error("💥 Project index could not be saved at all", e3);
-                            }
-                        }
-                    }
-                    return newList;
-                });
             } catch (e) {
                 console.error("💥 Auto-save failed:", e);
             }
@@ -323,7 +544,14 @@ function App() {
         layers?: LayerInfo[];       // For flat list (fallback) or now used for "Parent Stack"
         parents?: LayerInfo[];      // Ancestors
         children?: LayerInfo[];     // Children (recursive tree)
+        elementColors?: {           // Computed colors for the selected element
+            text: string;
+            background: string;
+            border: string;
+        };
     }>({ visible: false, x: 0, y: 0, selector: '', currentHref: null, tagName: undefined });
+
+    const [editingProperty, setEditingProperty] = useState<string | null>(null);
 
     const [studioInputValue, setStudioInputValue] = useState('');
     const [progressSteps, setProgressSteps] = useState<ProgressStep[]>([]);
@@ -354,7 +582,7 @@ function App() {
     // Scraping State
     const [showUrlModal, setShowUrlModal] = useState(false);
 
-    const inputRef = useRef<HTMLInputElement>(null);
+    const inputRef = useRef<HTMLTextAreaElement>(null);
     const studioChatEndRef = useRef<HTMLDivElement>(null);
     const gridScrollRef = useRef<HTMLDivElement>(null);
 
@@ -393,7 +621,7 @@ function App() {
     useEffect(() => {
         const fetchDynamicPlaceholders = async () => {
             try {
-                const apiKey = process.env.API_KEY;
+                const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
                 if (!apiKey) return;
                 const ai = new GoogleGenAI({ apiKey });
                 const response = await ai.models.generateContent({
@@ -421,17 +649,24 @@ function App() {
         setTimeout(fetchDynamicPlaceholders, 1000);
     }, []);
 
-    const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const handleInputChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
         setInputValue(event.target.value);
+        if (inputRef.current) {
+            inputRef.current.style.height = 'auto';
+            inputRef.current.style.height = `${inputRef.current.scrollHeight}px`;
+        }
     };
 
     const enhancePrompt = async (currentText: string): Promise<string> => {
         if (!currentText.trim()) return currentText;
 
         try {
-            const apiKey = process.env.API_KEY;
-            if (!apiKey) throw new Error("API_KEY is not configured.");
-            const ai = new GoogleGenAI({ apiKey });
+            // Get the appropriate API key based on the selected model
+            const apiKey = selectedModel.provider === 'google'
+                ? import.meta.env.VITE_GEMINI_API_KEY
+                : import.meta.env.VITE_OPENROUTER_API_KEY;
+
+            if (!apiKey) throw new Error(`API key for ${selectedModel.provider} is not configured.`);
 
             const prompt = `You are a UI/UX prompt enhancement specialist. Take the user's basic prompt and transform it into a detailed, structured, and high-quality design prompt that will produce exceptional results.
 
@@ -446,12 +681,15 @@ Enhance this into a premium, detailed prompt that:
 
 Return ONLY the enhanced prompt text, nothing else. No explanations, no markdown, just the enhanced prompt.`;
 
-            const response = await ai.models.generateContent({
-                model: 'gemini-3-flash-preview',
-                contents: { role: 'user', parts: [{ text: prompt }] }
-            });
+            let enhancedText = '';
+            for await (const chunk of streamAI({
+                model: selectedModel,
+                apiKey,
+                prompt
+            })) {
+                enhancedText += chunk;
+            }
 
-            const enhancedText = response.text?.trim();
             if (!enhancedText) {
                 throw new Error('No response from AI');
             }
@@ -615,12 +853,18 @@ Return ONLY the enhanced prompt text, nothing else. No explanations, no markdown
         setInputValue(enhanced);
         setIsEnhancingMain(false);
 
+        if (inputRef.current) {
+            setTimeout(() => {
+                inputRef.current!.style.height = 'auto';
+                inputRef.current!.style.height = `${inputRef.current!.scrollHeight}px`;
+                inputRef.current?.focus();
+            }, 0);
+        }
+
         // Auto-clear error after 5 seconds
         if (enhanceError) {
             setTimeout(() => setEnhanceError(null), 5000);
         }
-
-        inputRef.current?.focus();
     };
 
     const removeImage = (index: number) => {
@@ -651,10 +895,10 @@ Return ONLY the enhanced prompt text, nothing else. No explanations, no markdown
         }
     };
 
-    const parseJsonStream = async function* (responseStream: AsyncGenerator<{ text: string }>) {
+    const parseJsonStream = async function* (responseStream: AsyncGenerator<string>) {
         let buffer = '';
         for await (const chunk of responseStream) {
-            const text = chunk.text;
+            const text = chunk;
             if (typeof text !== 'string') continue;
             buffer += text;
             let braceCount = 0;
@@ -764,8 +1008,10 @@ Return ONLY the enhanced prompt text, nothing else. No explanations, no markdown
         ]);
 
         try {
-            const apiKey = process.env.API_KEY;
-            const ai = new GoogleGenAI({ apiKey });
+            // Get the appropriate API key based on the selected model
+            const apiKey = selectedModel.provider === 'google'
+                ? import.meta.env.VITE_GEMINI_API_KEY
+                : import.meta.env.VITE_OPENROUTER_API_KEY;
 
             // Context Awareness: Find the "Home" page (first page or named index.html)
             const homePage = studioPages.find(p => p.name === 'index.html') || studioPages[0];
@@ -814,11 +1060,6 @@ ${studioUrl ? `Reference URL: ${studioUrl}` : ''}
                 });
             });
 
-            const responseStream = await ai.models.generateContentStream({
-                model: 'gemini-3-flash-preview',
-                contents: [{ parts: contentParts, role: "user" }],
-            });
-
             // Update step 1 to complete, step 2 to active
             setProgressSteps(prev => prev.map(s =>
                 s.id === '1' ? { ...s, status: 'complete' } :
@@ -826,8 +1067,13 @@ ${studioUrl ? `Reference URL: ${studioUrl}` : ''}
             ));
 
             let accumulatedHtml = '';
-            for await (const chunk of responseStream) {
-                accumulatedHtml += chunk.text;
+            for await (const chunk of streamAI({
+                model: selectedModel,
+                apiKey,
+                prompt,
+                images: studioImages
+            })) {
+                accumulatedHtml += chunk;
                 setStudioArtifact(prev => prev ? { ...prev, html: accumulatedHtml } : null);
 
                 // Update step 2 to complete, step 3 to active (streaming starts)
@@ -890,9 +1136,12 @@ ${studioUrl ? `Reference URL: ${studioUrl}` : ''}
         setDrawerState({ isOpen: true, mode: 'variations', title: 'Variations', data: currentArtifact.id });
 
         try {
-            const apiKey = process.env.API_KEY;
-            if (!apiKey) throw new Error("API_KEY is not configured.");
-            const ai = new GoogleGenAI({ apiKey });
+            // Get the appropriate API key based on the selected model
+            const apiKey = selectedModel.provider === 'google'
+                ? import.meta.env.VITE_GEMINI_API_KEY
+                : import.meta.env.VITE_OPENROUTER_API_KEY;
+
+            if (!apiKey) throw new Error(`API key for ${selectedModel.provider} is not configured.`);
 
             const prompt = `
 You are a master UI/UX designer. Generate 3 RADICAL CONCEPTUAL VARIATIONS of: "${currentSession.prompt}".
@@ -911,10 +1160,10 @@ Required JSON Output Format (stream ONE object per line):
 \`{ "name": "Persona Name", "html": "..." }\`
         `.trim();
 
-            const responseStream = await ai.models.generateContentStream({
-                model: 'gemini-3-flash-preview',
-                contents: [{ parts: [{ text: prompt }], role: 'user' }],
-                config: { temperature: 1.2 }
+            const responseStream = streamAI({
+                model: selectedModel,
+                apiKey,
+                prompt
             });
 
             for await (const variation of parseJsonStream(responseStream)) {
@@ -989,6 +1238,9 @@ Required JSON Output Format (stream ONE object per line):
             setInputValue('');
             setInputImages([]); // Clear after send
             setInputUrl(null);
+            if (inputRef.current) {
+                inputRef.current.style.height = 'auto';
+            }
         }
 
         setIsLoading(true);
@@ -1032,30 +1284,39 @@ Required JSON Output Format (stream ONE object per line):
         setFocusedArtifactIndex(null);
 
         try {
-            const apiKey = process.env.API_KEY;
-            if (!apiKey) throw new Error("API_KEY is not configured.");
-            const ai = new GoogleGenAI({ apiKey });
+            // Get the appropriate API key based on the selected model
+            const apiKey = selectedModel.provider === 'google'
+                ? import.meta.env.VITE_GEMINI_API_KEY
+                : import.meta.env.VITE_OPENROUTER_API_KEY;
 
+            if (!apiKey) throw new Error(`API key for ${selectedModel.provider} is not configured.`);
+
+            // Style Generation
             const stylePrompt = `
 Generate 3 distinct, highly evocative design directions for: "${finalPrompt}".
 Return ONLY a raw JSON array of 3 * NEW *, creative names for these directions.
         `.trim();
 
-            const styleResponse = await ai.models.generateContent({
-                model: 'gemini-3-flash-preview',
-                contents: { role: 'user', parts: [{ text: stylePrompt }] }
-            });
-
             let generatedStyles: string[] = [];
-            const styleText = styleResponse.text || '[]';
-            const jsonMatch = styleText.match(/\[[\s\S]*\]/);
+            let styleText = '';
 
-            if (jsonMatch) {
-                try {
-                    generatedStyles = JSON.parse(jsonMatch[0]);
-                } catch (e) {
-                    console.warn("Failed to parse styles, using fallbacks");
+            try {
+                // Use selectedModel for styles too? Or stick to Gemini for consistency/speed if small?
+                // Let's use selectedModel.
+                for await (const chunk of streamAI({
+                    model: selectedModel,
+                    apiKey,
+                    prompt: stylePrompt
+                })) {
+                    styleText += chunk;
                 }
+
+                const jsonMatch = styleText.match(/\[[\s\S]*\]/);
+                if (jsonMatch) {
+                    generatedStyles = JSON.parse(jsonMatch[0]);
+                }
+            } catch (e) {
+                console.warn("Failed to generate/parse styles, using fallbacks", e);
             }
 
             if (!generatedStyles || generatedStyles.length < 3) {
@@ -1081,53 +1342,36 @@ Return ONLY a raw JSON array of 3 * NEW *, creative names for these directions.
 
             const generateArtifact = async (artifact: Artifact, styleInstruction: string) => {
                 try {
-                    // Use finalPrompt to ensure URL instructions are included
                     const prompt = `
 You are Flash UI. Create a stunning, high-fidelity UI component based on this request: "${finalPrompt}".
 **CONCEPTUAL DIRECTION: ${styleInstruction}**
 Return ONLY RAW HTML. No markdown fences.
           `.trim();
 
-                    const contentParts: any[] = [{ text: prompt }];
-
-                    // Add image data if present
-                    currentInputImages.forEach(img => {
-                        // Extract base64 data (remove prefix like "data:image/png;base64,")
-                        const base64Data = img.split(',')[1];
-                        contentParts.push({
-                            inlineData: {
-                                data: base64Data,
-                                mimeType: 'image/png' // Assuming PNG for simplicity or could detect from string
-                            }
-                        });
-                    });
-
-                    const responseStream = await ai.models.generateContentStream({
-                        model: 'gemini-3-flash-preview',
-                        contents: [{ parts: contentParts, role: "user" }],
-                    });
-
                     let accumulatedHtml = '';
-                    for await (const chunk of responseStream) {
-                        const text = chunk.text;
-                        if (typeof text === 'string') {
-                            accumulatedHtml += text;
-                            const autoScrollScript = `
+
+                    // Stream content
+                    for await (const chunk of streamAI({
+                        model: selectedModel,
+                        apiKey,
+                        prompt,
+                        images: currentInputImages // Base64 data URLs
+                    })) {
+                        accumulatedHtml += chunk;
+                        const autoScrollScript = `
                                 <script>
                                     window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-                                    // Also try to scroll the document element
                                     document.documentElement.scrollTop = document.documentElement.scrollHeight;
                                 </script>
                             `;
-                            setSessions(prev => prev.map(sess =>
-                                sess.id === sessionId ? {
-                                    ...sess,
-                                    artifacts: sess.artifacts.map(art =>
-                                        art.id === artifact.id ? { ...art, html: accumulatedHtml + autoScrollScript } : art
-                                    )
-                                } : sess
-                            ));
-                        }
+                        setSessions(prev => prev.map(sess =>
+                            sess.id === sessionId ? {
+                                ...sess,
+                                artifacts: sess.artifacts.map(art =>
+                                    art.id === artifact.id ? { ...art, html: accumulatedHtml + autoScrollScript } : art
+                                )
+                            } : sess
+                        ));
                     }
 
                     let finalHtml = accumulatedHtml.trim();
@@ -1165,7 +1409,7 @@ Return ONLY RAW HTML. No markdown fences.
             setIsLoading(false);
             setTimeout(() => inputRef.current?.focus(), 100);
         }
-    }, [inputValue, isLoading, sessions.length, inputImages, inputUrl]);
+    }, [inputValue, isLoading, sessions.length, inputImages, inputUrl, selectedModel]);
 
     const handleSurpriseMe = () => {
         const currentPrompt = placeholders[placeholderIndex];
@@ -1173,13 +1417,20 @@ Return ONLY RAW HTML. No markdown fences.
         handleSendMessage(currentPrompt);
     };
 
-    const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-        if (event.key === 'Enter' && !isLoading) {
+    const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (event.key === 'Enter' && !event.shiftKey && !isLoading) {
             event.preventDefault();
             handleSendMessage();
         } else if (event.key === 'Tab' && !inputValue && !isLoading) {
             event.preventDefault();
-            setInputValue(placeholders[placeholderIndex]);
+            const text = placeholders[placeholderIndex];
+            setInputValue(text);
+            if (inputRef.current) {
+                setTimeout(() => {
+                    inputRef.current!.style.height = 'auto';
+                    inputRef.current!.style.height = `${inputRef.current!.scrollHeight}px`;
+                }, 0);
+            }
         }
     };
 
@@ -1266,7 +1517,8 @@ Return ONLY RAW HTML. No markdown fences.
                         currentHref: event.data.currentHref,
                         tagName: event.data.tagName,
                         layers: event.data.parents || event.data.layers, // Fallback
-                        children: event.data.children
+                        children: event.data.children,
+                        elementColors: event.data.elementColors
                     });
                 }
             } else if (event.data && event.data.type === 'closeContextMenu') {
@@ -1351,6 +1603,59 @@ Return ONLY RAW HTML. No markdown fences.
             }
         }
         setContextMenu(prev => ({ ...prev, visible: false }));
+    };
+
+    const extractColorsFromHtml = (html: string) => {
+        // Find hex and rgb/rgba colors. Also captures some CSS variables if they look like colors.
+        const colorRegex = /#(?:[0-9a-fA-F]{3,4}){1,2}|rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*(?:,\s*[\d.]+\s*)?\)/gi;
+        const matches = html.match(colorRegex) || [];
+        // Unique colors, simplified
+        return Array.from(new Set(matches.map(c => c.toLowerCase()))).filter(c => {
+            // Filter out common false positives if any, or just keep all
+            return c.length > 3;
+        });
+    };
+
+    const handleThemeColorChange = (oldColor: string, newColor: string) => {
+        if (!studioArtifact) return;
+
+        let newHtml = studioArtifact.html;
+        if (isGlobalThemeEdit) {
+            // Global replace: strictly matches the color string
+            const escapedOld = oldColor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(escapedOld, 'gi');
+            newHtml = newHtml.replace(regex, newColor);
+        } else if (contextMenu.selector) {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(newHtml, 'text/html');
+            const el = doc.querySelector(contextMenu.selector) as HTMLElement;
+            if (el) {
+                if (editingProperty) {
+                    // Property-specific update
+                    if (editingProperty === 'text') el.style.color = newColor;
+                    else if (editingProperty === 'background') el.style.backgroundColor = newColor;
+                    else if (editingProperty === 'border') el.style.borderColor = newColor;
+                } else {
+                    const style = el.getAttribute('style') || '';
+                    const escapedOld = oldColor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const regex = new RegExp(escapedOld, 'gi');
+
+                    if (regex.test(style)) {
+                        el.setAttribute('style', style.replace(regex, newColor));
+                    } else {
+                        el.style.color = newColor;
+                    }
+                }
+
+                const isFullPage = studioArtifact.html.trim().toLowerCase().startsWith('<!doctype') || studioArtifact.html.trim().toLowerCase().startsWith('<html');
+                newHtml = isFullPage ? doc.documentElement.outerHTML : doc.body.innerHTML;
+            }
+        }
+
+        setStudioArtifact({ ...studioArtifact, html: newHtml });
+        // Refresh extracted colors based on the new HTML
+        setThemeColors(extractColorsFromHtml(newHtml));
+        setEditingColor(newColor);
     };
 
     const handleDeleteElement = () => {
@@ -1510,6 +1815,17 @@ Return ONLY RAW HTML. No markdown fences.
     <script>
       (function() {
         let isMagicMode = ${initialState};
+
+        function rgbToHex(rgb) {
+            if (!rgb) return '';
+            if (rgb.startsWith('#')) return rgb;
+            const match = rgb.match(/^rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)(?:,\\s*[\\d.]+)?\\)$/);
+            if (!match) return rgb;
+            const r = parseInt(match[1]);
+            const g = parseInt(match[2]);
+            const b = parseInt(match[3]);
+            return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+        }
 
         window.addEventListener('message', (e) => {
             if (e.data && e.data.type === 'setMagicMode') {
@@ -1880,6 +2196,14 @@ Return ONLY RAW HTML. No markdown fences.
                 // Build child tree for the target element
                 const childTree = buildLayerTree(e.target);
 
+                // Extract computed colors
+                const styles = window.getComputedStyle(e.target);
+                const elementColors = {
+                    text: rgbToHex(styles.color),
+                    background: rgbToHex(styles.backgroundColor),
+                    border: rgbToHex(styles.borderColor)
+                };
+
                 window.parent.postMessage({
                     type: 'contextMenu',
                     selector: selector,
@@ -1888,7 +2212,8 @@ Return ONLY RAW HTML. No markdown fences.
                     tagName: e.target.tagName,
                     currentHref: anchor ? anchor.href : null,
                     parents: parentStack,
-                    children: childTree
+                    children: childTree,
+                    elementColors: elementColors
                 }, '*');
              }
         }, true);
@@ -2016,63 +2341,67 @@ Return ONLY RAW HTML. No markdown fences.
                                             )}
                                         </div>
 
-                                        <div className="studio-input-row">
-                                            <button
-                                                type="button"
-                                                className="studio-attach-btn"
-                                                onClick={() => studioFileInputRef.current?.click()}
-                                                title="Add Image"
-                                            >
-                                                <ImageIcon />
-                                            </button>
-                                            <input
-                                                type="file"
-                                                ref={studioFileInputRef}
-                                                style={{ display: 'none' }}
-                                                accept="image/*"
-                                                multiple
-                                                onChange={(e) => {
-                                                    const files = e.target.files;
-                                                    if (files) {
-                                                        Array.from(files).forEach((file: any) => {
-                                                            const reader = new FileReader();
-                                                            reader.onloadend = () => {
-                                                                if (typeof reader.result === 'string') {
-                                                                    setStudioImages(prev => [...prev, reader.result as string]);
-                                                                }
-                                                            };
-                                                            reader.readAsDataURL(file);
-                                                        });
-                                                    }
-                                                }}
-                                            />
+                                        <div className="studio-prompt-box">
+                                            <div className="studio-input-body">
+                                                <textarea
+                                                    placeholder="Command design changes..."
+                                                    value={studioInputValue}
+                                                    onChange={(e) => setStudioInputValue(e.target.value)}
+                                                    onPaste={handleStudioPaste}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter' && !e.shiftKey) {
+                                                            e.preventDefault();
+                                                            // Trigger form submission manually since it's a textarea now
+                                                            e.currentTarget.form?.requestSubmit();
+                                                        }
+                                                    }}
+                                                    disabled={isLoading}
+                                                    className={`studio-textarea ${isEnhancingStudio ? 'simmering' : ''}`}
+                                                    rows={1}
+                                                />
+                                            </div>
 
+                                            <div className="studio-input-toolbar">
+                                                <div className="toolbar-left">
+                                                    <StudioModelSelector
+                                                        models={MODELS}
+                                                        selectedModel={selectedModel}
+                                                        onSelect={setSelectedModel}
+                                                        disabled={isLoading}
+                                                    />
+                                                </div>
 
-                                            <input
-                                                type="text"
-                                                placeholder="Command design changes..."
-                                                value={studioInputValue}
-                                                onChange={(e) => setStudioInputValue(e.target.value)}
-                                                onPaste={handleStudioPaste}
-                                                disabled={isLoading}
-                                                className={isEnhancingStudio ? 'simmering' : ''}
-                                            />
+                                                <div className="toolbar-right">
+                                                    <button
+                                                        type="button"
+                                                        className="studio-icon-btn"
+                                                        onClick={() => studioFileInputRef.current?.click()}
+                                                        title="Add Image"
+                                                    >
+                                                        <PlusIcon />
+                                                    </button>
 
-                                            {/* Magic Enhance Button for Studio */}
-                                            {studioInputValue.trim() && !isLoading && (
-                                                <button
-                                                    type="button"
-                                                    className={`studio-magic-btn ${isEnhancingStudio ? 'enhancing' : ''}`}
-                                                    onClick={handleMagicEnhanceStudio}
-                                                    disabled={isEnhancingStudio}
-                                                    title="Enhance prompt with AI"
-                                                >
-                                                    <SparklesIcon />
-                                                </button>
-                                            )}
-                                            <button type="submit" disabled={isLoading || (!studioInputValue.trim() && studioImages.length === 0 && !studioUrl)}>
-                                                <ArrowUpIcon />
-                                            </button>
+                                                    {studioInputValue.trim() && !isLoading && (
+                                                        <button
+                                                            type="button"
+                                                            className={`studio-icon-btn magic ${isEnhancingStudio ? 'enhancing' : ''}`}
+                                                            onClick={handleMagicEnhanceStudio}
+                                                            disabled={isEnhancingStudio}
+                                                            title="Enhance prompt"
+                                                        >
+                                                            <SparklesIcon />
+                                                        </button>
+                                                    )}
+
+                                                    <button
+                                                        type="submit"
+                                                        className="studio-send-btn"
+                                                        disabled={isLoading || (!studioInputValue.trim() && studioImages.length === 0 && !studioUrl)}
+                                                    >
+                                                        {isLoading ? <div className="spinner" /> : <ArrowUpIcon />}
+                                                    </button>
+                                                </div>
+                                            </div>
                                         </div>
                                     </form>
                                 </div>
@@ -2207,6 +2536,18 @@ Return ONLY RAW HTML. No markdown fences.
 
                         <div className="context-menu-divider" />
 
+                        <div className="context-menu-item" onClick={() => {
+                            if (studioArtifact) {
+                                setThemeColors(extractColorsFromHtml(studioArtifact.html));
+                                setShowThemeEditor(true);
+                                setContextMenu(prev => ({ ...prev, visible: false }));
+                            }
+                        }}>
+                            <PaletteIcon /> Theme Editor
+                        </div>
+
+                        <div className="context-menu-divider" />
+
                         <div className="context-menu-header">Link to Page</div>
                         {studioPages.map(page => (
                             <div
@@ -2225,6 +2566,118 @@ Return ONLY RAW HTML. No markdown fences.
                     onClose={() => setShowUrlModal(false)}
                     onSubmit={handleScrapeSubmit}
                 />
+
+                {/* Theme Editor Panel */}
+                {showThemeEditor && (
+                    <div className="theme-editor-overlay" onClick={() => setShowThemeEditor(false)}>
+                        <div className="theme-editor-panel" onClick={e => e.stopPropagation()}>
+                            <div className="theme-editor-header">
+                                <div className="header-title">
+                                    <PaletteIcon />
+                                    <h3>Theme Editor</h3>
+                                </div>
+                                <button className="close-panel-btn" onClick={() => setShowThemeEditor(false)}>
+                                    <XIcon />
+                                </button>
+                            </div>
+
+                            <div className="theme-editor-body">
+                                <div className="theme-edit-mode">
+                                    <label className="switch-label">
+                                        <span>Full Website</span>
+                                        <div className={`switch ${isGlobalThemeEdit ? 'on' : ''}`} onClick={() => setIsGlobalThemeEdit(!isGlobalThemeEdit)}>
+                                            <div className="switch-handle" />
+                                        </div>
+                                    </label>
+                                    <p className="mode-description">
+                                        {isGlobalThemeEdit
+                                            ? "Changing a color will replace it everywhere in the website."
+                                            : "Changing a color will only affect the currently selected element."}
+                                    </p>
+                                </div>
+
+                                <div className="extracted-colors-section">
+                                    <h4>{isGlobalThemeEdit ? "Global Palette" : "Element Colors"}</h4>
+
+                                    {!isGlobalThemeEdit && contextMenu.elementColors ? (
+                                        <div className="element-colors-list">
+                                            {[
+                                                { label: 'Text', key: 'text', color: contextMenu.elementColors.text },
+                                                { label: 'Background', key: 'background', color: contextMenu.elementColors.background },
+                                                { label: 'Border', key: 'border', color: contextMenu.elementColors.border }
+                                            ].map(item => (
+                                                <div
+                                                    key={item.key}
+                                                    className={`element-color-item ${editingProperty === item.key ? 'active' : ''}`}
+                                                    onClick={() => {
+                                                        setEditingColor(item.color);
+                                                        setEditingProperty(item.key);
+                                                    }}
+                                                >
+                                                    <div className="swatch" style={{ backgroundColor: item.color }} />
+                                                    <div className="label-area">
+                                                        <span className="label">{item.label}</span>
+                                                        <span className="value">{item.color}</span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="color-swatch-grid">
+                                            {themeColors.length > 0 ? themeColors.map((color, i) => (
+                                                <button
+                                                    key={i}
+                                                    className={`color-swatch-btn ${editingColor === color ? 'active' : ''}`}
+                                                    style={{ backgroundColor: color }}
+                                                    onClick={() => {
+                                                        setEditingColor(color);
+                                                        setEditingProperty(null);
+                                                    }}
+                                                    title={color}
+                                                >
+                                                    <div className="swatch-check">✓</div>
+                                                </button>
+                                            )) : (
+                                                <p className="no-colors">No colors detected yet.</p>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {editingColor && (
+                                    <div className="color-adjustment-area">
+                                        <div className="adjustment-header">
+                                            <span>{editingProperty ? `Adjust ${editingProperty.charAt(0).toUpperCase() + editingProperty.slice(1)}` : 'Adjust Color'}</span>
+                                            <code className="current-color-code">{editingColor}</code>
+                                        </div>
+                                        <div className="picker-container">
+                                            <input
+                                                type="color"
+                                                className="main-color-picker"
+                                                value={editingColor.startsWith('#') && editingColor.length === 7 ? editingColor : '#3b82f6'}
+                                                onChange={(e) => handleThemeColorChange(editingColor, e.target.value)}
+                                            />
+                                            <div className="manual-input">
+                                                <input
+                                                    type="text"
+                                                    value={editingColor}
+                                                    onChange={(e) => handleThemeColorChange(editingColor, e.target.value)}
+                                                    placeholder="#hex or rgb()"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="theme-editor-footer">
+                                <button className="apply-all-btn" onClick={() => setShowThemeEditor(false)}>
+                                    Done
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 <input
                     type="file"
@@ -2246,6 +2699,24 @@ Return ONLY RAW HTML. No markdown fences.
                 <button className="theme-toggle" onClick={toggleTheme}>
                     {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
                 </button>
+                {sessions.length > 0 && (
+                    <button
+                        className="theme-toggle"
+                        onClick={() => {
+                            // Simple reset
+                            setSessions([]);
+                            setCurrentSessionIndex(-1);
+                            // Reset input too
+                            setInputValue('');
+                            setInputImages([]);
+                            setInputUrl(null);
+                        }}
+                        style={{ marginLeft: '1rem', width: 'auto', padding: '0 1rem', borderRadius: '2rem' }}
+                        title="Start New Project"
+                    >
+                        <PlusIcon /> New
+                    </button>
+                )}
             </div>
 
             {/* Error Toast */}
@@ -2381,135 +2852,126 @@ Return ONLY RAW HTML. No markdown fences.
                     </div>
                 </div>
 
-                <div className="floating-input-container">
-                    {/* Recent Projects */}
-                    {recentProjects.length > 0 && (
-                        <div className="recent-projects">
-                            <div className="recent-track">
-                                {recentProjects.map(proj => (
-                                    <button
-                                        key={proj.id}
-                                        type="button"
-                                        className="recent-project-chip compact"
-                                        onClick={() => {
-                                            console.log("Chip UI Clicked:", proj.id);
-                                            handleLoadProject(proj.id);
-                                        }}
-                                        title={`Project: ${proj.name}`}
-                                    >
-                                        <div className="chip-preview-micro">
-                                            {proj.previewHtml ? (
-                                                <iframe
-                                                    srcDoc={proj.previewHtml}
-                                                    title="Preview"
-                                                    sandbox="allow-same-origin"
-                                                    tabIndex={-1}
-                                                />
-                                            ) : (
-                                                <div className="chip-fallback"><LayersIcon /></div>
-                                            )}
-                                        </div>
-                                        <div className="chip-meta">
-                                            <span className="chip-name">{proj.name}</span>
-                                        </div>
-                                    </button>
+                {/* Hide floating input when AI is designing OR when content exists */}
+                {!isLoading && sessions.length === 0 && (
+                    <div className="floating-input-container">
+
+
+                        <div className="start-blank-wrapper">
+                            <button type="button" onClick={handleStartBlank} className="start-blank-btn">
+                                <PlusIcon /> Start with blank Project
+                            </button>
+                        </div>
+
+                        {/* Previews */}
+                        {(inputImages.length > 0 || inputUrl) && (
+                            <div className="input-previews">
+                                {inputImages.map((img, index) => (
+                                    <div key={index} className="preview-chip image">
+                                        <ImageIcon />
+                                        <span>Image {index + 1}</span>
+                                        <button onClick={() => removeImage(index)}><XIcon /></button>
+                                        <img src={img} alt="Preview" className="chip-bg" />
+                                    </div>
                                 ))}
-                            </div>
-                        </div>
-                    )}
-
-                    <div className="start-blank-wrapper">
-                        <button type="button" onClick={handleStartBlank} className="start-blank-btn">
-                            <PlusIcon /> Start with blank Project
-                        </button>
-                    </div>
-
-                    {/* Previews */}
-                    {(inputImages.length > 0 || inputUrl) && (
-                        <div className="input-previews">
-                            {inputImages.map((img, index) => (
-                                <div key={index} className="preview-chip image">
-                                    <ImageIcon />
-                                    <span>Image {index + 1}</span>
-                                    <button onClick={() => removeImage(index)}><XIcon /></button>
-                                    <img src={img} alt="Preview" className="chip-bg" />
-                                </div>
-                            ))}
-                            {inputUrl && (
-                                <div className="preview-chip url">
-                                    <LinkIcon />
-                                    <span>{inputUrl}</span>
-                                    <button onClick={() => setInputUrl(null)}><XIcon /></button>
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    <div className={`input-wrapper ${isLoading ? 'loading' : ''}`}>
-                        {(!inputValue && !isLoading && inputImages.length === 0 && !inputUrl) && (
-                            <div className="animated-placeholder" key={placeholderIndex}>
-                                <span className="placeholder-text">{placeholders[placeholderIndex]}</span>
-                                <span className="tab-hint">Tab</span>
+                                {inputUrl && (
+                                    <div className="preview-chip url">
+                                        <LinkIcon />
+                                        <span>{inputUrl}</span>
+                                        <button onClick={() => setInputUrl(null)}><XIcon /></button>
+                                    </div>
+                                )}
                             </div>
                         )}
 
-                        <input
-                            ref={inputRef}
-                            type="text"
-                            value={inputValue}
-                            onChange={handleInputChange}
-                            onKeyDown={handleKeyDown}
-                            onPaste={handlePaste}
-                            disabled={isLoading}
-                            className={`${isLoading ? 'generating' : ''} ${isEnhancingMain ? 'simmering' : ''}`}
-                        />
+                        <div className={`input-wrapper ${isLoading ? 'loading' : ''} structured`}>
+                            <div className="input-body">
+                                {(!inputValue && !isLoading && inputImages.length === 0 && !inputUrl) && (
+                                    <div className="animated-placeholder" key={placeholderIndex}>
+                                        <span className="placeholder-text">{placeholders[placeholderIndex]}</span>
+                                        <span className="tab-hint">Tab</span>
+                                    </div>
+                                )}
 
-                        {/* Magic Enhance Button */}
-                        {inputValue.trim() && !isLoading && (
-                            <button
-                                className={`magic-enhance-btn ${isEnhancingMain ? 'enhancing' : ''}`}
-                                onClick={handleMagicEnhanceMain}
-                                disabled={isEnhancingMain}
-                                title="Enhance prompt with AI"
-                                type="button"
-                            >
-                                <SparklesIcon />
-                            </button>
-                        )}
+                                <textarea
+                                    ref={inputRef}
+                                    value={inputValue}
+                                    onChange={handleInputChange}
+                                    onKeyDown={handleKeyDown}
+                                    onPaste={handlePaste}
+                                    disabled={isLoading}
+                                    className={`main-textarea ${isLoading ? 'generating' : ''} ${isEnhancingMain ? 'simmering' : ''}`}
+                                    rows={1}
+                                />
+                            </div>
 
-                        {/* Attachment Button (Moved to Right) */}
-                        <div className="attachment-wrapper">
-                            <button
-                                className={`attach-btn ${showAttachMenu ? 'active' : ''}`}
-                                onClick={() => setShowAttachMenu(!showAttachMenu)}
-                            >
-                                <PlusIcon />
-                            </button>
-                            {showAttachMenu && (
-                                <div className="attach-menu">
-                                    <button onClick={() => fileInputRef.current?.click()}>
-                                        <ImageIcon /> Upload Image
-                                    </button>
-                                    <button onClick={handleUrlInput}>
-                                        <LinkIcon /> Paste URL
+
+                            <div className="input-toolbar">
+                                <div className="toolbar-left">
+                                    <div className="model-selector-wrapper">
+                                        <ModelSelector
+                                            models={MODELS}
+                                            selectedModel={selectedModel}
+                                            onSelect={setSelectedModel}
+                                            disabled={isLoading}
+                                        />
+                                    </div>
+
+                                    {inputValue.trim() && !isLoading && (
+                                        <button
+                                            className={`magic-enhance-btn ${isEnhancingMain ? 'enhancing' : ''}`}
+                                            onClick={handleMagicEnhanceMain}
+                                            disabled={isEnhancingMain}
+                                            title="Enhance prompt with AI"
+                                            type="button"
+                                        >
+                                            <SparklesIcon />
+                                        </button>
+                                    )}
+                                </div>
+
+                                <div className="toolbar-right">
+                                    <div className="attachment-wrapper">
+                                        <button
+                                            className={`attach-btn ${showAttachMenu ? 'active' : ''}`}
+                                            onClick={() => setShowAttachMenu(!showAttachMenu)}
+                                            title="Attach file or URL"
+                                        >
+                                            <PlusIcon />
+                                        </button>
+                                        {showAttachMenu && (
+                                            <div className="attach-menu">
+                                                <button onClick={() => fileInputRef.current?.click()}>
+                                                    <ImageIcon /> Upload Image
+                                                </button>
+                                                <button onClick={handleUrlInput}>
+                                                    <LinkIcon /> Paste URL
+                                                </button>
+                                            </div>
+                                        )}
+                                        <input
+                                            type="file"
+                                            ref={fileInputRef}
+                                            style={{ display: 'none' }}
+                                            accept="image/*"
+                                            multiple
+                                            onChange={handleImageUpload}
+                                        />
+                                    </div>
+
+                                    <button
+                                        className="send-button"
+                                        onClick={() => handleSendMessage()}
+                                        disabled={isLoading || (!inputValue.trim() && inputImages.length === 0 && !inputUrl)}
+                                        title="Send prompt"
+                                    >
+                                        {isLoading ? <div className="spinner" /> : <ArrowUpIcon />}
                                     </button>
                                 </div>
-                            )}
-                            <input
-                                type="file"
-                                ref={fileInputRef}
-                                style={{ display: 'none' }}
-                                accept="image/*"
-                                multiple
-                                onChange={handleImageUpload}
-                            />
+                            </div>
                         </div>
-
-                        <button className="send-button" onClick={() => handleSendMessage()} disabled={isLoading}>
-                            {isLoading ? <div className="spinner" /> : <ArrowUpIcon />}
-                        </button>
                     </div>
-                </div>
+                )}
             </div>
 
             <PasteUrlModal
