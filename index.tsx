@@ -265,26 +265,36 @@ const ApiKeyModal = ({ isOpen, onClose, onSave, savedKey }: { isOpen: boolean; o
     return (
         <div className="modal-overlay" onClick={onClose}>
             <div className="modal-content" onClick={e => e.stopPropagation()}>
-                <div className="modal-header">
-                    <h3>OpenRouter API Key</h3>
-                    <button className="close-button" onClick={onClose}><XIcon /></button>
-                </div>
+                <button className="modal-close-btn" onClick={onClose}>
+                    <XIcon />
+                </button>
                 <div className="modal-body">
-                    <p style={{ marginBottom: '16px', opacity: 0.8, fontSize: '0.9rem' }}>
-                        Enter your own OpenRouter API key to avoid rate limits.
-                        This key is saved locally in your browser.
-                    </p>
-                    <input
-                        type="password"
-                        className="url-input"
-                        placeholder="sk-or-..."
-                        value={key}
-                        onChange={(e) => setKey(e.target.value)}
-                        style={{ width: '100%', marginBottom: '16px' }}
-                    />
-                    <div className="modal-actions">
-                        <button className="secondary-button" onClick={onClose}>Cancel</button>
-                        <button className="primary-button" onClick={() => onSave(key)}>Save Key</button>
+                    <div className="modal-header-section">
+                        <div className="modal-icon-wrapper" style={{ background: 'rgba(74, 222, 128, 0.1)', color: '#4ade80' }}>
+                            <KeyIcon />
+                        </div>
+                        <div className="modal-title-group">
+                            <h2>OpenRouter API Key</h2>
+                            <p>Enter your key to avoid rate limits</p>
+                        </div>
+                    </div>
+
+                    <div className="modal-form">
+                        <p style={{ margin: 0, opacity: 0.8, fontSize: '0.9rem', lineHeight: '1.4' }}>
+                            Your API key is stored locally in your browser and used only for your requests.
+                        </p>
+                        <input
+                            type="password"
+                            className="modal-input"
+                            placeholder="sk-or-..."
+                            value={key}
+                            onChange={(e) => setKey(e.target.value)}
+                            autoFocus
+                        />
+                        <div className="modal-actions">
+                            <button className="btn-cancel" onClick={onClose}>Cancel</button>
+                            <button className="btn-primary" onClick={() => onSave(key)}>Save Key</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -2867,26 +2877,28 @@ Return ONLY RAW HTML. No markdown fences.
 
                 <div className={`stage-container ${focusedArtifactIndex !== null ? 'mode-focus' : 'mode-split'}`}>
                     <div className={`empty-state ${hasStarted ? 'fade-out' : ''}`}>
-                        <div className="landing-header" style={{ position: 'absolute', top: '24px', right: '24px', zIndex: 10 }}>
+                        <div className="landing-header" style={{ position: 'absolute', top: '24px', right: '80px', zIndex: 1000, pointerEvents: 'auto' }}>
                             <button
                                 className="icon-button"
                                 onClick={() => setShowApiKeyModal(true)}
                                 title={userApiKey ? "API Key Saved" : "Set OpenRouter API Key"}
                                 style={{
                                     color: userApiKey ? '#4ade80' : 'inherit',
-                                    background: 'rgba(255,255,255,0.1)',
-                                    padding: '8px',
+                                    background: theme === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+                                    padding: '8px 12px',
                                     borderRadius: '8px',
                                     backdropFilter: 'blur(4px)',
-                                    border: '1px solid rgba(255,255,255,0.1)',
+                                    border: theme === 'dark' ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
                                     cursor: 'pointer',
                                     display: 'flex',
                                     alignItems: 'center',
-                                    gap: '6px'
+                                    gap: '8px',
+                                    transition: 'all 0.2s ease',
+                                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
                                 }}
                             >
                                 <KeyIcon />
-                                <span style={{ fontSize: '14px', fontWeight: 500 }}>API Key</span>
+                                <span style={{ fontSize: '14px', fontWeight: 500 }}>{userApiKey ? 'Key Saved' : 'Set API Key'}</span>
                             </button>
                         </div>
                         <div className="empty-content">
