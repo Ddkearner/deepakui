@@ -116,3 +116,7 @@ export const CheckIcon = () => (
 export const SearchIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
 );
+
+export const KeyIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21 2-2 2m-7.6 7.6a6.5 6.5 0 1 1-2.6-2.6l9.6-9.6 2.3 2.3a2 2 0 0 1 .5.83l.6 3-3 .6a2 2 0 0 1-.83-.5L17 3l-6 6z" /><circle cx="7.5" cy="16.5" r="1.5" /></svg>
+);

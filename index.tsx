@@ -253,6 +253,45 @@ async function* streamAI({
     }
 }
 
+const ApiKeyModal = ({ isOpen, onClose, onSave, savedKey }: { isOpen: boolean; onClose: () => void; onSave: (key: string) => void; savedKey: string }) => {
+    const [key, setKey] = useState(savedKey);
+
+    useEffect(() => {
+        setKey(savedKey);
+    }, [savedKey]);
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal-content" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                    <h3>OpenRouter API Key</h3>
+                    <button className="close-button" onClick={onClose}><XIcon /></button>
+                </div>
+                <div className="modal-body">
+                    <p style={{ marginBottom: '16px', opacity: 0.8, fontSize: '0.9rem' }}>
+                        Enter your own OpenRouter API key to avoid rate limits.
+                        This key is saved locally in your browser.
+                    </p>
+                    <input
+                        type="password"
+                        className="url-input"
+                        placeholder="sk-or-..."
+                        value={key}
+                        onChange={(e) => setKey(e.target.value)}
+                        style={{ width: '100%', marginBottom: '16px' }}
+                    />
+                    <div className="modal-actions">
+                        <button className="secondary-button" onClick={onClose}>Cancel</button>
+                        <button className="primary-button" onClick={() => onSave(key)}>Save Key</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 import DottedGlowBackground from './components/DottedGlowBackground';
 import ModelSelector from './components/ModelSelector';
 import StudioModelSelector from './components/StudioModelSelector';
@@ -287,7 +326,8 @@ import {
     MinimizeIcon,
     MenuIcon,
     TrashIcon,
-    PaletteIcon
+    PaletteIcon,
+    KeyIcon
 } from './components/Icons';
 
 // Recursive Menu Item Component
@@ -409,6 +449,28 @@ function App() {
     }, []);
 
 
+
+    // User API Key State
+    const [userApiKey, setUserApiKey] = useState<string>('');
+    const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+
+    useEffect(() => {
+        const storedKey = localStorage.getItem('user_openrouter_key');
+        if (storedKey) setUserApiKey(storedKey);
+    }, []);
+
+    const handleSaveApiKey = (key: string) => {
+        setUserApiKey(key);
+        localStorage.setItem('user_openrouter_key', key);
+        setShowApiKeyModal(false);
+    };
+
+    const getEffectiveApiKey = (provider: 'google' | 'openrouter') => {
+        if (provider === 'openrouter') {
+            return userApiKey || import.meta.env.VITE_OPENROUTER_API_KEY;
+        }
+        return import.meta.env.VITE_GEMINI_API_KEY;
+    };
 
     // Auto-Save Effect
     useEffect(() => {
@@ -669,7 +731,8 @@ function App() {
             // Get the appropriate API key based on the selected model
             const apiKey = selectedModel.provider === 'google'
                 ? import.meta.env.VITE_GEMINI_API_KEY
-                : import.meta.env.VITE_OPENROUTER_API_KEY;
+                // Use getter to check user key first
+                : getEffectiveApiKey('openrouter');
 
             if (!apiKey) throw new Error(`API key for ${selectedModel.provider} is not configured.`);
 
@@ -1016,7 +1079,7 @@ Return ONLY the enhanced prompt text, nothing else. No explanations, no markdown
             // Get the appropriate API key based on the selected model
             const apiKey = selectedModel.provider === 'google'
                 ? import.meta.env.VITE_GEMINI_API_KEY
-                : import.meta.env.VITE_OPENROUTER_API_KEY;
+                : getEffectiveApiKey('openrouter');
 
             // Context Awareness: Find the "Home" page (first page or named index.html)
             const homePage = studioPages.find(p => p.name === 'index.html') || studioPages[0];
@@ -1144,7 +1207,7 @@ ${studioUrl ? `Reference URL: ${studioUrl}` : ''}
             // Get the appropriate API key based on the selected model
             const apiKey = selectedModel.provider === 'google'
                 ? import.meta.env.VITE_GEMINI_API_KEY
-                : import.meta.env.VITE_OPENROUTER_API_KEY;
+                : getEffectiveApiKey('openrouter');
 
             if (!apiKey) throw new Error(`API key for ${selectedModel.provider} is not configured.`);
 
@@ -1292,7 +1355,7 @@ Required JSON Output Format (stream ONE object per line):
             // Get the appropriate API key based on the selected model
             const apiKey = selectedModel.provider === 'google'
                 ? import.meta.env.VITE_GEMINI_API_KEY
-                : import.meta.env.VITE_OPENROUTER_API_KEY;
+                : getEffectiveApiKey('openrouter');
 
             if (!apiKey) throw new Error(`API key for ${selectedModel.provider} is not configured.`);
 
@@ -2301,6 +2364,14 @@ Return ONLY RAW HTML. No markdown fences.
                         <button className="header-btn" onClick={handleDownloadCode} title="Download HTML">
                             <DownloadIcon />
                         </button>
+                        <button
+                            className="header-btn"
+                            onClick={() => setShowApiKeyModal(true)}
+                            title={userApiKey ? "API Key Saved" : "Set OpenRouter API Key"}
+                            style={{ color: userApiKey ? '#4ade80' : 'inherit' }}
+                        >
+                            <KeyIcon /> <span className="hide-on-mobile">API Key</span>
+                        </button>
                     </div>
 
                     <button className="studio-close" onClick={() => {
@@ -2582,6 +2653,13 @@ Return ONLY RAW HTML. No markdown fences.
                     onSubmit={handleScrapeSubmit}
                 />
 
+                <ApiKeyModal
+                    isOpen={showApiKeyModal}
+                    onClose={() => setShowApiKeyModal(false)}
+                    onSave={handleSaveApiKey}
+                    savedKey={userApiKey}
+                />
+
                 {/* Theme Editor Panel */}
                 {showThemeEditor && (
                     <div className="theme-editor-overlay" onClick={() => setShowThemeEditor(false)}>
@@ -2789,6 +2867,28 @@ Return ONLY RAW HTML. No markdown fences.
 
                 <div className={`stage-container ${focusedArtifactIndex !== null ? 'mode-focus' : 'mode-split'}`}>
                     <div className={`empty-state ${hasStarted ? 'fade-out' : ''}`}>
+                        <div className="landing-header" style={{ position: 'absolute', top: '24px', right: '24px', zIndex: 10 }}>
+                            <button
+                                className="icon-button"
+                                onClick={() => setShowApiKeyModal(true)}
+                                title={userApiKey ? "API Key Saved" : "Set OpenRouter API Key"}
+                                style={{
+                                    color: userApiKey ? '#4ade80' : 'inherit',
+                                    background: 'rgba(255,255,255,0.1)',
+                                    padding: '8px',
+                                    borderRadius: '8px',
+                                    backdropFilter: 'blur(4px)',
+                                    border: '1px solid rgba(255,255,255,0.1)',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px'
+                                }}
+                            >
+                                <KeyIcon />
+                                <span style={{ fontSize: '14px', fontWeight: 500 }}>API Key</span>
+                            </button>
+                        </div>
                         <div className="empty-content">
                             <h1>Deepak UI</h1>
                             <p>Creative UI generation in a flash</p>
