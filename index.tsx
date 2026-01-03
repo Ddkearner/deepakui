@@ -198,12 +198,17 @@ async function* streamAI({
         });
         messages.push({ role: 'user', content });
 
+        if (!apiKey) {
+            console.error('❌ OpenRouter API Key is missing');
+            throw new Error("OpenRouter API Key is missing. Please check your .env file or Vercel settings.");
+        }
+
         console.log('🔌 OpenRouter API Request:', { model: model.modelId, messageCount: messages.length });
 
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${apiKey}`,
+                'Authorization': `Bearer ${apiKey.trim()}`,
                 'Content-Type': 'application/json',
                 'HTTP-Referer': 'https://deepak-ui.com',
                 'X-Title': 'Deepak UI'
@@ -673,11 +678,11 @@ function App() {
 User's basic prompt: "${currentText}"
 
 Enhance this into a premium, detailed prompt that:
-1. Specifies visual aesthetics (colors, typography, spacing)
-2. Describes the desired user experience
-3. Mentions modern design patterns or trends if relevant
-4. Is clear, structured, and actionable
-5. Maintains the user's original intent
+1. Enforces an "Apple-like" aesthetic: Clean, Minimal, Premium, and Professional.
+2. Specifies refined typography (Inter, SF Pro), subtle shadows, and adequate whitespace.
+3. EXPLICITLY AVOIDS: Neons, harsh gradients, cluttered layouts, and "gamery" aesthetics.
+4. Describes the desired user experience with a focus on fluidity and simplicity.
+5. Is clear, structured, and actionable.
 
 Return ONLY the enhanced prompt text, nothing else. No explanations, no markdown, just the enhanced prompt.`;
 
@@ -1293,7 +1298,8 @@ Required JSON Output Format (stream ONE object per line):
 
             // Style Generation
             const stylePrompt = `
-Generate 3 distinct, highly evocative design directions for: "${finalPrompt}".
+Generate 3 distinct, premium, professional design directions for: "${finalPrompt}".
+Focus on: Clean typography, glassmorphism, and minimal layouts.
 Return ONLY a raw JSON array of 3 * NEW *, creative names for these directions.
         `.trim();
 
@@ -1321,9 +1327,9 @@ Return ONLY a raw JSON array of 3 * NEW *, creative names for these directions.
 
             if (!generatedStyles || generatedStyles.length < 3) {
                 generatedStyles = [
-                    "Primary Pigment Gridwork",
-                    "Tactile Risograph Layering",
-                    "Kinetic Silhouette Balance"
+                    "Clean Mineral Glass",
+                    "Swiss International Style",
+                    "Soft Optical Depth"
                 ];
             }
 
@@ -1344,6 +1350,14 @@ Return ONLY a raw JSON array of 3 * NEW *, creative names for these directions.
                 try {
                     const prompt = `
 You are Flash UI. Create a stunning, high-fidelity UI component based on this request: "${finalPrompt}".
+
+**DESIGN PHILOSOPHY:**
+- Aesthetic: Apple-like, Premium, Professional, Clean, Minimalist.
+- Colors: Sophisticated neutrals, subtle accents. AVOID NEONS and HARSH GRADIENTS.
+- Typography: Clean, readable, professional (e.g., Inter, system-ui).
+- Layout: Generous whitespace, perfect alignment, fluid responsiveness.
+- Effect: "Glassmorphism" is allowed if subtle/premium (frosted glass), but avoid cheap-looking glows.
+
 **CONCEPTUAL DIRECTION: ${styleInstruction}**
 Return ONLY RAW HTML. No markdown fences.
           `.trim();
