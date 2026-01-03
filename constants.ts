@@ -1,12 +1,12 @@
 export const INITIAL_PLACEHOLDERS = [
-  'hero section for AI startup with dark mode',
-  'pricing cards with glassmorphism and amber accents',
-  'testimonial slider with elegant typography',
-  'features grid with modern icons and animations',
-  'footer with newsletter signup and social links',
-  'product showcase with 3D card effects',
-  'team section with hover bios and blue theme',
-  'stats counter with minimal design',
-  'CTA banner with bold typography and teal accent',
-  'service cards with subtle shadows'
+  'minimalist hero section with outlined buttons',
+  'pricing table with clean typography and 1px borders',
+  'dashboard stats cards in light theme',
+  'contact form with simple inputs and clear labels',
+  'features list with monochrome icons',
+  'settings panel with side navigation',
+  'data table with refined spacing',
+  'product detail view with gallery',
+  'authentication split screen with minimal graphics',
+  'empty state with illustration and action button'
 ];

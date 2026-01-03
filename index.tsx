@@ -678,10 +678,10 @@ function App() {
 User's basic prompt: "${currentText}"
 
 Enhance this into a premium, detailed prompt that:
-1. Enforces an "Apple-like" aesthetic: Clean, Minimal, Premium, and Professional.
-2. Specifies refined typography (Inter, SF Pro), subtle shadows, and adequate whitespace.
-3. EXPLICITLY AVOIDS: Neons, harsh gradients, cluttered layouts, and "gamery" aesthetics.
-4. Describes the desired user experience with a focus on fluidity and simplicity.
+1. Enforces a "Shadcn UI" aesthetic: Clean, Light-Themed (White/Gray), Outlined, and Professional.
+2. Specifies refined typography (Inter, system-ui), 1px borders for structure, and subtle/no shadows.
+3. EXPLICITLY AVOIDS: Neons, dark mode (unless requested), harsh gradients, colorful backgrounds, and "gamery" aesthetics.
+4. Describes the desired user experience with a focus on simplicity, readability, and flat design.
 5. Is clear, structured, and actionable.
 
 Return ONLY the enhanced prompt text, nothing else. No explanations, no markdown, just the enhanced prompt.`;
@@ -1352,11 +1352,12 @@ Return ONLY a raw JSON array of 3 * NEW *, creative names for these directions.
 You are Flash UI. Create a stunning, high-fidelity UI component based on this request: "${finalPrompt}".
 
 **DESIGN PHILOSOPHY:**
-- Aesthetic: Apple-like, Premium, Professional, Clean, Minimalist.
-- Colors: Sophisticated neutrals, subtle accents. AVOID NEONS and HARSH GRADIENTS.
-- Typography: Clean, readable, professional (e.g., Inter, system-ui).
-- Layout: Generous whitespace, perfect alignment, fluid responsiveness.
-- Effect: "Glassmorphism" is allowed if subtle/premium (frosted glass), but avoid cheap-looking glows.
+- Aesthetic: Shadcn UI, Linear, Vercel-like, Ultra-Clean, Professional.
+- Colors: STRICTLY Light Theme by default (White backgrounds, Gray-50 to Gray-900 text/borders).
+- Structure: Use 1px sharp borders (outlines) for cards, inputs, and buttons. AVOID heavy drop shadows.
+- Typography: Inter, system-ui. Crisp, readable, professional.
+- Layout: Generous whitespace, perfect alignment, consistent padding.
+- AVOID: Neons, Gradients, "Glassmorphism" (unless explicitly requested), Mixed Dark/Light themes.
 
 **CONCEPTUAL DIRECTION: ${styleInstruction}**
 Return ONLY RAW HTML. No markdown fences.
