@@ -265,36 +265,26 @@ const ApiKeyModal = ({ isOpen, onClose, onSave, savedKey }: { isOpen: boolean; o
     return (
         <div className="modal-overlay" onClick={onClose}>
             <div className="modal-content" onClick={e => e.stopPropagation()}>
-                <button className="modal-close-btn" onClick={onClose}>
-                    <XIcon />
-                </button>
+                <div className="modal-header">
+                    <h3>OpenRouter API Key</h3>
+                    <button className="close-button" onClick={onClose}><XIcon /></button>
+                </div>
                 <div className="modal-body">
-                    <div className="modal-header-section">
-                        <div className="modal-icon-wrapper" style={{ background: 'rgba(74, 222, 128, 0.1)', color: '#4ade80' }}>
-                            <KeyIcon />
-                        </div>
-                        <div className="modal-title-group">
-                            <h2>OpenRouter API Key</h2>
-                            <p>Enter your key to avoid rate limits</p>
-                        </div>
-                    </div>
-
-                    <div className="modal-form">
-                        <p style={{ margin: 0, opacity: 0.8, fontSize: '0.9rem', lineHeight: '1.4' }}>
-                            Your API key is stored locally in your browser and used only for your requests.
-                        </p>
-                        <input
-                            type="password"
-                            className="modal-input"
-                            placeholder="sk-or-..."
-                            value={key}
-                            onChange={(e) => setKey(e.target.value)}
-                            autoFocus
-                        />
-                        <div className="modal-actions">
-                            <button className="btn-cancel" onClick={onClose}>Cancel</button>
-                            <button className="btn-primary" onClick={() => onSave(key)}>Save Key</button>
-                        </div>
+                    <p style={{ marginBottom: '16px', opacity: 0.8, fontSize: '0.9rem' }}>
+                        Enter your own OpenRouter API key to avoid rate limits.
+                        This key is saved locally in your browser.
+                    </p>
+                    <input
+                        type="password"
+                        className="url-input"
+                        placeholder="sk-or-..."
+                        value={key}
+                        onChange={(e) => setKey(e.target.value)}
+                        style={{ width: '100%', marginBottom: '16px' }}
+                    />
+                    <div className="modal-actions">
+                        <button className="secondary-button" onClick={onClose}>Cancel</button>
+                        <button className="primary-button" onClick={() => onSave(key)}>Save Key</button>
                     </div>
                 </div>
             </div>

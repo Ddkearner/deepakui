@@ -118,5 +118,5 @@ export const SearchIcon = () => (
 );
 
 export const KeyIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21 2-2 2m-7.6 7.6a6 6 0 1 1-2.8-2.8l8.4-8.4a2 2 0 0 1 2.8 2.8Z" /></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21 2-2 2m-7.6 7.6a6 6 0 1 1-4.24-4.24 6 6 0 0 1 4.24 4.24c.7.7 2.1 2.1 2.1 2.1L16 16l2-2 2 2 2-2 2 2 2-2-4-4Z" /></svg>
 );
